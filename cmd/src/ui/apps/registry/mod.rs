@@ -200,17 +200,50 @@ impl RegistryApp {
                         for _ in 0..4 { print!("\x1B[1A\x1B[2K\r"); }
                         let _ = std::io::stdout().flush();
 
-                        let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;
-                        Self::refresh_models(state);
+                        let model_id = rec.manifest.id.clone();
+                        let model_category = rec.manifest.category.clone();
+                        let model_filename = rec.manifest.huggingface_filename.clone();
+                        let model_path = rec.manifest.local_path.clone()
+                            .map(std::path::PathBuf::from)
+                            .or_else(|| engines::models::fetch::ModelDownloader::get_cached_path(
+                                &model_category,
+                                &model_id,
+                                &model_filename,
+                            ));
 
-                        match action {
-                            Some(act) if act == "DELETE" => {
-                                history_segment = Some(format!("{} ❯ {} {}", name.dimmed(), "🗑️".dimmed(), "Deleted".dimmed()));
+                        let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;
+
+                        if matches!(action.as_deref(), Some("LOAD")) {
+                            let mut path = model_path.ok_or_else(|| {
+                                color_eyre::eyre::eyre!("Downloaded model file could not be resolved: {}", model_id)
+                            })?;
+                            if path.is_dir() {
+                                path = path.join(&model_filename);
                             }
-                            _ => {
-                                history_segment = Some(name.dimmed().to_string());
+                            if path.extension().and_then(|value| value.to_str()) != Some("gguf") {
+                                return Err(color_eyre::eyre::eyre!(
+                                    "Model switch refused non-GGUF path: {}",
+                                    path.display()
+                                ));
                             }
+
+                            tokio::task::block_in_place(|| {
+                                tokio::runtime::Handle::current().block_on(state.Core_engine.load_model(path))
+                            })
+                            .map_err(|error| color_eyre::eyre::eyre!(error))?;
+                            state._active_model_id = Some(model_id.clone());
+                            state.Core_engine.is_loaded.store(
+                                true,
+                                std::sync::atomic::Ordering::SeqCst,
+                            );
+                            history_segment = Some(format!("{} ❯ loaded", name.dimmed()));
+                        } else if matches!(action.as_deref(), Some("DELETE")) {
+                            history_segment = Some(format!("{} ❯ {} {}", name.dimmed(), "🗑️".dimmed(), "Deleted".dimmed()));
+                        } else {
+                            history_segment = Some(name.dimmed().to_string());
                         }
+
+                        Self::refresh_models(state);
                     }
                 }
                 Err(_) => {
