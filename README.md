@@ -106,6 +106,8 @@ Disable automatic migration with:
 .\install.ps1 -NoMigrate
 ```
 
+The complete migration, environment precedence and internal compatibility rules are defined in [docs/BITSHIT_MIGRATION.md](docs/BITSHIT_MIGRATION.md).
+
 Internal crates and FFI symbols may temporarily retain legacy `cluaiz` names while compatibility-safe migration is completed. Those names are implementation details, not the public product identity.
 
 ## Usage
