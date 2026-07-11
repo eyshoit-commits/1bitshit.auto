@@ -1,29 +1,62 @@
-param(
-    [Parameter(Position = 0)]
-    [string]$Backend = 'auto',
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$RemainingArgs
-)
+# BitShit Windows updater entry point.
+# Accepts PowerShell-style, GNU-style, and positional backend syntax.
 
 $ErrorActionPreference = 'Stop'
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
-$AllowedBackends = @('auto','cpu','cuda')
-if ($Backend -eq '-Backend' -or $Backend -eq '--backend') {
-    if (-not $RemainingArgs -or $RemainingArgs.Count -lt 1) {
-        throw 'FEHLER: Nach -Backend fehlt der Wert auto, cpu oder cuda.'
+$Backend = 'auto'
+$NoLegacyAlias = $false
+$NoMigrate = $false
+$NoLaunch = $false
+
+for ($i = 0; $i -lt $args.Count; $i++) {
+    $arg = [string]$args[$i]
+    switch -Regex ($arg) {
+        '^(?i)--?backend$' {
+            if ($i + 1 -ge $args.Count) {
+                throw 'FEHLER: Nach --backend fehlt der Wert auto, cpu oder cuda.'
+            }
+            $i++
+            $Backend = ([string]$args[$i]).ToLowerInvariant()
+            continue
+        }
+        '^(?i)--?backend=(auto|cpu|cuda)$' {
+            $Backend = $Matches[1].ToLowerInvariant()
+            continue
+        }
+        '^(?i)--?no-legacy-alias$' {
+            $NoLegacyAlias = $true
+            continue
+        }
+        '^(?i)--?no-migrate$' {
+            $NoMigrate = $true
+            continue
+        }
+        '^(?i)--?no-launch$' {
+            $NoLaunch = $true
+            continue
+        }
+        '^(?i)(auto|cpu|cuda)$' {
+            $Backend = $Matches[1].ToLowerInvariant()
+            continue
+        }
+        '^(?i)--?yes$' {
+            # Updates are always non-interactive; retain this flag for CLI symmetry.
+            continue
+        }
+        default {
+            throw "FEHLER: Unbekanntes Update-Argument: $arg"
+        }
     }
-    $Backend = $RemainingArgs[0]
 }
-$Backend = $Backend.Trim().ToLowerInvariant()
-if ($AllowedBackends -notcontains $Backend) {
+
+if ($Backend -notin @('auto', 'cpu', 'cuda')) {
     throw "FEHLER: Ungültiges Backend '$Backend'. Erlaubt sind auto, cpu oder cuda."
 }
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-
 function Say([string]$Message) { Write-Host $Message }
 function Fail([string]$Message) { throw "FEHLER: $Message" }
 
@@ -56,8 +89,16 @@ if (-not (Test-Path $Installer)) {
     Fail 'scripts\setup-windows.ps1 fehlt im Repository.'
 }
 
+$Forward = @{
+    Backend = $Backend
+    Yes = $true
+}
+if ($NoLegacyAlias) { $Forward.NoLegacyAlias = $true }
+if ($NoMigrate) { $Forward.NoMigrate = $true }
+if ($NoLaunch) { $Forward.NoLaunch = $true }
+
 Say "Starte Aktualisierung und Neuinstallation über MSYS2 UCRT64 mit Backend $Backend."
-& $Installer -Backend $Backend -Yes
+& $Installer @Forward
 if ($LASTEXITCODE -ne 0) {
     Fail "Installation ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
 }
