@@ -5,19 +5,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 fail=0
+TMP="${TMPDIR:-/tmp}/bitshit-rebrand-check.$$"
+trap 'rm -f "$TMP"' EXIT
 
 check_file_absent() {
   local pattern="$1"
   local path="$2"
   local label="$3"
-  if grep -nE "$pattern" "$path" >/tmp/bitshit-rebrand-check.$$ 2>/dev/null; then
+  if grep -nE "$pattern" "$path" >"$TMP" 2>/dev/null; then
     printf '[FAIL] %s\n' "$label" >&2
-    cat /tmp/bitshit-rebrand-check.$$ >&2
+    cat "$TMP" >&2
     fail=1
   else
     printf '[ OK ] %s\n' "$label"
   fi
-  rm -f /tmp/bitshit-rebrand-check.$$
 }
 
 check_file_present() {
@@ -37,7 +38,13 @@ check_file_present 'name = "bitshit"' cmd/Cargo.toml 'Cargo binary target is bit
 check_file_present 'eyshoit-commits/bitshit.cpu' install.sh 'POSIX installer uses the BitShit repository'
 check_file_present 'eyshoit-commits/bitshit.cpu' install.ps1 'PowerShell installer uses the BitShit repository'
 check_file_present 'auto\|cpu\|cuda\|rocm\|metal' install.sh 'POSIX installer exposes all supported backends'
-check_file_present 'ValidateSet\(.Auto., .CPU., .CUDA.' install.ps1 'PowerShell installer exposes backend selection'
+check_file_present "ValidateSet\('auto','cpu','cuda'\)" install.ps1 'PowerShell installer exposes backend selection'
+check_file_present 'migrate_legacy_data' install.sh 'POSIX installer includes legacy data migration'
+check_file_present 'Migrate-LegacyData' install.ps1 'PowerShell installer includes legacy data migration'
+check_file_present '\.migrated-from-cluaiz' install.sh 'POSIX migration is idempotent'
+check_file_present '\.migrated-from-cluaiz' install.ps1 'PowerShell migration is idempotent'
+check_file_present 'original remains untouched' install.sh 'POSIX migration preserves legacy data'
+check_file_present 'original remains untouched' install.ps1 'PowerShell migration preserves legacy data'
 check_file_absent 'raw\.githubusercontent\.com/cluaiz|github\.com/cluaiz/cluaiz' install.sh 'POSIX installer has no legacy remote registry'
 check_file_absent 'raw\.githubusercontent\.com/cluaiz|github\.com/cluaiz/cluaiz' install.ps1 'PowerShell installer has no legacy remote registry'
 
