@@ -23,12 +23,14 @@ BACKEND=""
 ASSUME_YES=0
 LEGACY_ALIAS=1
 MIGRATE_LEGACY=1
+LAUNCH_AFTER_INSTALL=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --backend) [[ $# -ge 2 ]] || die "--backend requires a value"; BACKEND="$2"; shift 2 ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --no-legacy-alias) LEGACY_ALIAS=0; shift ;;
     --no-migrate) MIGRATE_LEGACY=0; shift ;;
+    --no-launch) LAUNCH_AFTER_INSTALL=0; shift ;;
     *) die "Unknown option: $1" ;;
   esac
 done
@@ -160,4 +162,8 @@ EOF
 log "Installed $INSTALL_DIR/$TARGET_BIN"
 log "Runtime synchronized to $DATA_DIR"
 log "Models stored in $SOURCE_DIR/models/dl"
-"$INSTALL_DIR/$TARGET_BIN" --version || true
+if [[ $LAUNCH_AFTER_INSTALL -eq 1 ]]; then
+  "$INSTALL_DIR/$TARGET_BIN" --version || true
+else
+  log "Launch skipped by --no-launch"
+fi
