@@ -1,0 +1,72 @@
+name: Installer contract
+
+on:
+  push:
+    paths:
+      - install.sh
+      - scripts/app-linux.sh
+      - scripts/setup-linux.sh
+      - scripts/app-windows.ps1
+      - scripts/setup-windows.ps1
+      - tests/installer_contract.py
+      - docs/PATH_MIGRATION.md
+      - .github/workflows/installer-contract.yml
+  pull_request:
+    paths:
+      - install.sh
+      - scripts/app-linux.sh
+      - scripts/setup-linux.sh
+      - scripts/app-windows.ps1
+      - scripts/setup-windows.ps1
+      - tests/installer_contract.py
+      - docs/PATH_MIGRATION.md
+      - .github/workflows/installer-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shared installer contract
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/installer_contract.py', run_name='__main__')
+
+      - name: Validate Bash syntax
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bash -n install.sh
+          bash -n scripts/setup-linux.sh
+          bash -n scripts/app-linux.sh
+
+      - name: Validate PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @('scripts/setup-windows.ps1', 'scripts/app-windows.ps1')
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${file}: $($_.Message)" }
+              exit 1
+            }
+          }
