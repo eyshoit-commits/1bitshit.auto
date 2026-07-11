@@ -5,15 +5,22 @@ members = [
     "inference-engine/engines/cluaiz-shared",
     "inference-engine/engines/system-booster",
     "cmd",
-    "test/dummy_plugin"
-, "inference-cel", "test/extension_testing", "test/engine_cel_test", "test/ai_search_e2e_test", "test/comprehensive_e2e_trace"]
+    "test/dummy_plugin",
+    "inference-cel",
+    "test/extension_testing",
+    "test/engine_cel_test",
+    "test/ai_search_e2e_test",
+    "test/comprehensive_e2e_trace"
+]
 
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Cluaiz Technologies"]
+authors = ["BitShit Contributors"]
+license = "Apache-2.0"
+repository = "https://github.com/eyshoit-commits/bitshit.cpu"
 
 [profile.dev]
 debug = false
