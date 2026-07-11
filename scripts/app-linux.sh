@@ -122,11 +122,22 @@ export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF
 [[ "$BACKEND" == cuda ]] && export GGML_CUDA=ON
 [[ "$BACKEND" == rocm ]] && export GGML_HIPBLAS=ON
 
-log "Applying public runtime migration"
+SOURCE_MIGRATIONS=(
+  repair-openmp-duplicates.py
+  rebrand-main-cli.py
+  fix-public-branding.py
+  fix-model-runtime.py
+  fix-registry-cache.py
+  fix-model-hub-load.py
+)
+
+log "Applying complete BitShit source migration pipeline"
 (
   cd "$SOURCE_DIR"
-  python3 scripts/rebrand-main-cli.py
-  python3 scripts/fix-model-runtime.py
+  for migration in "${SOURCE_MIGRATIONS[@]}"; do
+    [[ -f "scripts/$migration" ]] || die "Missing source migration: scripts/$migration"
+    python3 "scripts/$migration"
+  done
 )
 
 log "Building backend=$BACKEND profile=$PROFILE"
