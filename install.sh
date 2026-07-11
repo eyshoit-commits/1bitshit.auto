@@ -26,8 +26,8 @@ done
 OS_NAME="$(uname -s 2>/dev/null || true)"
 case "$OS_NAME" in
   Linux)
-    SCRIPT="$REPO_ROOT/scripts/app-linux.sh"
-    [[ -f "$SCRIPT" ]] || fail "Missing Linux installer: $SCRIPT"
+    SCRIPT="$REPO_ROOT/scripts/setup-linux.sh"
+    [[ -f "$SCRIPT" ]] || fail "Missing Linux setup: $SCRIPT"
     ARGS=()
     [[ -n "$BACKEND" ]] && ARGS+=(--backend "$BACKEND")
     [[ $YES -eq 1 ]] && ARGS+=(--yes)
@@ -37,7 +37,7 @@ case "$OS_NAME" in
     ;;
   MINGW*|MSYS*|CYGWIN*)
     command -v powershell.exe >/dev/null 2>&1 || fail "powershell.exe wurde nicht gefunden."
-    SCRIPT="$(cygpath -w "$REPO_ROOT/scripts/app-windows.ps1")"
+    SCRIPT="$(cygpath -w "$REPO_ROOT/scripts/setup-windows.ps1")"
     PS_ARGS=(-NoProfile -ExecutionPolicy Bypass -File "$SCRIPT")
     [[ -n "$BACKEND" ]] && PS_ARGS+=(-Backend "$BACKEND")
     [[ $YES -eq 1 ]] && PS_ARGS+=(-Yes)
