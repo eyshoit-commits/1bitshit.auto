@@ -43,6 +43,8 @@ def main() -> int:
     cmd_update = read("update.cmd")
     build_rs = read("cmd/build.rs")
     docs = read("docs/PATH_MIGRATION.md")
+    source_docs = read("docs/SOURCE_MIGRATIONS.md")
+    bitnet_routing = read("scripts/fix-bitnet-routing.py")
     readme = read("README.md")
 
     for fragment in (
@@ -109,6 +111,7 @@ def main() -> int:
         "fix-model-runtime.py",
         "fix-registry-cache.py",
         "fix-model-hub-load.py",
+        "fix-bitnet-routing.py",
     )
     for path, text in (
         ("scripts/app-linux.sh", linux),
@@ -116,6 +119,17 @@ def main() -> int:
         ("cmd/build.rs", build_rs),
     ):
         assert_order(text, source_migrations, path)
+
+    for fragment in (
+        'architecture_type',
+        'ggml-model-i2_s',
+        'ggml_model_i2_s',
+        'i2-s',
+        'local_path',
+        'if is_bitnet',
+    ):
+        require(bitnet_routing, fragment, "scripts/fix-bitnet-routing.py")
+    require(source_docs, "fix-bitnet-routing.py", "docs/SOURCE_MIGRATIONS.md")
 
     for fragment in (
         "--backend=*)",
