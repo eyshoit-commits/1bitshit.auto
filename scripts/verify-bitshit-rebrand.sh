@@ -48,7 +48,7 @@ check_file_present 'eyshoit-commits/bitshit.cpu' install.ps1 'PowerShell install
 check_file_present 'auto\|cpu\|cuda\|rocm\|metal' install.sh 'POSIX installer exposes all supported backends'
 check_file_present "ValidateSet\('auto','cpu','cuda'\)" install.ps1 'PowerShell installer exposes backend selection'
 check_file_present 'cargo build --locked.*--bin bitshit' install.sh 'POSIX installer builds the public BitShit binary'
-check_file_present "--bin', 'bitshit'" install.ps1 'PowerShell installer builds the public BitShit binary'
+check_file_present 'cargo build --locked.*--bin bitshit' install.ps1 'PowerShell installer builds the public BitShit binary'
 
 check_file_present 'migrate_legacy_data' install.sh 'POSIX installer includes legacy data migration'
 check_file_present 'Migrate-LegacyData' install.ps1 'PowerShell installer includes legacy data migration'
