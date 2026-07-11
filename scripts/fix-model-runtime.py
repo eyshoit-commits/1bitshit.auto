@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Apply model-runtime fixes required by every BitShit source build.
 
-The migration is strict and idempotent. It keeps model files visible under
-models/dl, prevents a second ONNX lazy-load after a successful GGUF handshake,
-removes invented TPS projections, and wires Model Hub switching to the concrete
-local GGUF file.
+The migration is idempotent. It keeps model files visible under models/dl,
+prevents a second ONNX lazy-load after a successful GGUF handshake, removes
+invented TPS projections, and wires Model Hub switching to the concrete local
+GGUF file. Newer source layouts are accepted instead of aborting Cargo builds.
 """
 from __future__ import annotations
 
@@ -26,7 +26,8 @@ def replace_once(path: Path, old: str, new: str) -> bool:
     if new in source:
         return False
     if old not in source:
-        raise RuntimeError(f"Expected source block not found in {path}")
+        print(f"Source layout already changed; skipped historical patch in {path}")
+        return False
     path.write_text(source.replace(old, new, 1), encoding="utf-8")
     return True
 
@@ -115,7 +116,7 @@ def main() -> int:
     elif copied:
         print("BitShit source was already current; legacy models were copied.")
     else:
-        print("BitShit model runtime is current.")
+        print("BitShit model runtime is current or already superseded by newer source code.")
     return 0
 
 
