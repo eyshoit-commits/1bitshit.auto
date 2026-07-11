@@ -7,6 +7,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 if ($env:OS -ne 'Windows_NT') { throw '[bitshit] setup-windows.ps1 ist nur fuer Windows.' }
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -49,39 +52,22 @@ function Invoke-Msys([string]$Command) {
 
 Install-Msys2
 
-Step 'Aktualisiere MSYS2 und installiere die UCRT64-Buildumgebung.'
+Step 'Aktualisiere MSYS2 und installiere die vollständige UCRT64-Buildumgebung.'
 Invoke-Msys 'pacman -Sy --noconfirm'
-Invoke-Msys 'pacman -S --needed --noconfirm base-devel git make cmake ninja pkgconf mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf'
-
-if (-not (Has 'rustup')) {
-    if (-not (Has 'winget')) { Fail 'rustup fehlt und winget ist nicht verfügbar.' }
-    Step 'Installiere Rustup.'
-    & winget install --id Rustlang.Rustup --exact --accept-package-agreements --accept-source-agreements --silent
-    if ($LASTEXITCODE -ne 0) { Fail 'Rustup konnte nicht installiert werden.' }
-}
+Invoke-Msys 'pacman -S --needed --noconfirm base-devel git make cmake ninja pkgconf mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-rust'
 
 $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
 $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
 $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
 
-Step 'Installiere das Rust-GNU-Ziel.'
-& rustup target add x86_64-pc-windows-gnu
-if ($LASTEXITCODE -ne 0) { Fail 'Rust-Ziel x86_64-pc-windows-gnu konnte nicht installiert werden.' }
-
-foreach ($Tool in @('gcc.exe','g++.exe','cmake.exe','ninja.exe','make.exe')) {
+foreach ($Tool in @('cargo.exe','rustc.exe','gcc.exe','g++.exe','cmake.exe','ninja.exe','make.exe')) {
     if (-not (Has $Tool)) { Fail "$Tool fehlt nach der MSYS2-Installation." }
 }
 
 if ($Backend -eq 'cuda') {
     if (-not (Has 'nvidia-smi.exe')) { Fail 'CUDA wurde gewählt, aber der NVIDIA-Treiber fehlt.' }
     if (-not (Has 'nvcc.exe')) {
-        if (-not (Has 'winget')) { Fail 'nvcc fehlt und winget ist nicht verfügbar.' }
-        Step 'Installiere das NVIDIA CUDA Toolkit.'
-        & winget install --id Nvidia.CUDA --exact --accept-package-agreements --accept-source-agreements --silent
-        if ($LASTEXITCODE -ne 0 -and -not (Has 'nvcc.exe')) { Fail 'CUDA Toolkit konnte nicht installiert werden.' }
-        $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
-        $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
-        $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
+        Fail 'CUDA wurde gewählt, aber nvcc.exe fehlt. Installiere das NVIDIA CUDA Toolkit und starte das Terminal neu.'
     }
 }
 
