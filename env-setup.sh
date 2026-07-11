@@ -7,6 +7,21 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 say() { printf '%s\n' "$*"; }
 fail() { printf 'FEHLER: %s\n' "$*" >&2; exit 1; }
 
+# Git Bash, MSYS2 and Cygwin run bash on Windows. Delegate to the native
+# PowerShell bootstrapper so both entry points work from the same checkout.
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*)
+    command -v powershell.exe >/dev/null 2>&1 || fail "powershell.exe wurde nicht gefunden."
+    PS_SCRIPT="$(cygpath -w "$REPO_ROOT/env-setup.ps1")"
+    say "Windows Git Bash erkannt. Starte PowerShell Umgebungs-Setup."
+    if [[ -n "$BACKEND" ]]; then
+      exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS_SCRIPT" "$BACKEND"
+    else
+      exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS_SCRIPT"
+    fi
+    ;;
+esac
+
 if [[ $EUID -eq 0 ]]; then
   SUDO=""
 elif command -v sudo >/dev/null 2>&1; then
