@@ -5,7 +5,7 @@ PRODUCT="bitshit"
 REPO="https://github.com/eyshoit-commits/1bitshit.auto.git"
 INSTALL_DIR="${BITSHIT_INSTALL_DIR:-$HOME/.local/bin}"
 DATA_DIR="${BITSHIT_HOME:-$HOME/.bitshit}"
-LEGACY_DATA_DIR="${CLUAIZ_HOME:-$HOME/.cluaiz}"
+LEGACY_DATA_DIR="${CLUAIZ_LEGACY_HOME:-${CLUAIZ_HOME:-$HOME/.cluaiz}}"
 SOURCE_DIR="${BITSHIT_SOURCE_DIR:-$DATA_DIR/source}"
 PROFILE="${BITSHIT_PROFILE:-release}"
 TARGET_BIN="bitshit"
@@ -70,10 +70,10 @@ case "$BACKEND" in
 esac
 
 if [[ $MIGRATE_LEGACY -eq 1 && "$LEGACY_DATA_DIR" != "$DATA_DIR" && -d "$LEGACY_DATA_DIR" && ! -e "$MIGRATION_MARKER" ]]; then
-  log "Migrating legacy data from $LEGACY_DATA_DIR"
+  log "Migrating legacy data from $LEGACY_DATA_DIR to $DATA_DIR"
   mkdir -p "$DATA_DIR"
   cp -a -n "$LEGACY_DATA_DIR"/. "$DATA_DIR"/ 2>/dev/null || true
-  printf 'source=%s\nmigrated_at=%s\n' "$LEGACY_DATA_DIR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MIGRATION_MARKER"
+  printf 'source=%s\ntarget=%s\nmigrated_at=%s\n' "$LEGACY_DATA_DIR" "$DATA_DIR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MIGRATION_MARKER"
 fi
 
 mkdir -p "$DATA_DIR" "$INSTALL_DIR"
@@ -92,9 +92,12 @@ fi
 git -C "$SOURCE_DIR" submodule sync --recursive
 git -C "$SOURCE_DIR" submodule update --init --recursive
 
+# BITSHIT_HOME is canonical. CLUAIZ_HOME remains a compatibility variable for
+# internal crates that have not yet been renamed, but points to the same data.
 export BITSHIT_HOME="$DATA_DIR"
+export CLUAIZ_HOME="$DATA_DIR"
+export CLUAIZ_LEGACY_HOME="$LEGACY_DATA_DIR"
 export BITSHIT_MODELS_DIR="$SOURCE_DIR/models/dl"
-export CLUAIZ_HOME="$LEGACY_DATA_DIR"
 export CXX="$CXX_BIN"
 export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF
 [[ "$BACKEND" == cuda ]] && export GGML_CUDA=ON
@@ -125,8 +128,8 @@ log "Synchronizing local engine and kernel artifacts"
 )
 
 ENGINE_EXT="so"
-ENGINE_PATH="$LEGACY_DATA_DIR/engine/cluaiz-engine.$ENGINE_EXT"
-KERNEL_PATH="$LEGACY_DATA_DIR/engine/cluaiz-llama.$ENGINE_EXT"
+ENGINE_PATH="$DATA_DIR/engine/cluaiz-engine.$ENGINE_EXT"
+KERNEL_PATH="$DATA_DIR/engine/cluaiz-llama.$ENGINE_EXT"
 [[ -f "$ENGINE_PATH" ]] || die "Runtime synchronization did not produce $ENGINE_PATH"
 [[ -f "$KERNEL_PATH" ]] || die "Runtime synchronization did not produce $KERNEL_PATH"
 
@@ -134,10 +137,10 @@ install -m 0755 "$BUILT" "$INSTALL_DIR/$TARGET_BIN"
 [[ $LEGACY_ALIAS -eq 1 ]] && ln -sfn "$TARGET_BIN" "$INSTALL_DIR/$LEGACY_BIN"
 
 cat > "$DATA_DIR/install.json" <<EOF
-{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR","runtime":"$LEGACY_DATA_DIR","models":"$SOURCE_DIR/models/dl"}
+{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR","runtime":"$DATA_DIR","legacy_source":"$LEGACY_DATA_DIR","models":"$SOURCE_DIR/models/dl"}
 EOF
 
 log "Installed $INSTALL_DIR/$TARGET_BIN"
-log "Runtime synchronized to $LEGACY_DATA_DIR"
+log "Runtime synchronized to $DATA_DIR"
 log "Models stored in $SOURCE_DIR/models/dl"
 "$INSTALL_DIR/$TARGET_BIN" --version || true
