@@ -7,6 +7,7 @@ use colored::Colorize;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::io::Write;
+use std::path::PathBuf;
 
 pub mod table;
 pub mod details;
@@ -33,12 +34,49 @@ struct ModelStoreEntry {
 pub struct RegistryApp;
 
 impl RegistryApp {
+    fn resolve_local_gguf(manifest: &engines::models::registry::ModelManifest) -> Option<PathBuf> {
+        let mut candidates = Vec::new();
+
+        if let Some(local_path) = &manifest.local_path {
+            candidates.push(PathBuf::from(local_path));
+        }
+
+        if let Some(cached) = engines::models::fetch::ModelDownloader::get_cached_path(
+            &manifest.category,
+            &manifest.id,
+            &manifest.huggingface_filename,
+        ) {
+            candidates.push(cached);
+        }
+
+        for mut path in candidates {
+            if path.is_dir() {
+                path = path.join(&manifest.huggingface_filename);
+            }
+            if path.is_file()
+                && path
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .map(|value| value.eq_ignore_ascii_case("gguf"))
+                    .unwrap_or(false)
+            {
+                return Some(path);
+            }
+        }
+
+        None
+    }
+
     fn refresh_models(state: &mut AppState) {
         let mut seen = HashSet::new();
         let mut models = engines::CoreRoster::get_recommendations(
             &state.hardware.to_hardware_truth(),
             state.ram_gb,
         );
+
+        for model in &mut models {
+            model.is_cached = Self::resolve_local_gguf(&model.manifest).is_some();
+        }
 
         models.retain(|model| {
             let key = format!(
@@ -201,36 +239,21 @@ impl RegistryApp {
                         let _ = std::io::stdout().flush();
 
                         let model_id = rec.manifest.id.clone();
-                        let model_category = rec.manifest.category.clone();
-                        let model_filename = rec.manifest.huggingface_filename.clone();
-                        let model_path = rec.manifest.local_path.clone()
-                            .map(std::path::PathBuf::from)
-                            .or_else(|| engines::models::fetch::ModelDownloader::get_cached_path(
-                                &model_category,
-                                &model_id,
-                                &model_filename,
-                            ));
-
                         let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;
 
                         if matches!(action.as_deref(), Some("LOAD")) {
-                            let mut path = model_path.ok_or_else(|| {
-                                color_eyre::eyre::eyre!("Downloaded model file could not be resolved: {}", model_id)
+                            let path = Self::resolve_local_gguf(&rec.manifest).ok_or_else(|| {
+                                color_eyre::eyre::eyre!(
+                                    "Model is not downloaded as a resolvable GGUF file: {}",
+                                    model_id
+                                )
                             })?;
-                            if path.is_dir() {
-                                path = path.join(&model_filename);
-                            }
-                            if path.extension().and_then(|value| value.to_str()) != Some("gguf") {
-                                return Err(color_eyre::eyre::eyre!(
-                                    "Model switch refused non-GGUF path: {}",
-                                    path.display()
-                                ));
-                            }
 
                             tokio::task::block_in_place(|| {
                                 tokio::runtime::Handle::current().block_on(state.Core_engine.load_model(path))
                             })
                             .map_err(|error| color_eyre::eyre::eyre!(error))?;
+
                             state._active_model_id = Some(model_id.clone());
                             state.Core_engine.is_loaded.store(
                                 true,
