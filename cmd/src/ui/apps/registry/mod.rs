@@ -1,64 +1,142 @@
 use color_eyre::Result;
 use tokio::sync::mpsc;
-use engines::{DownloadEvent};
+use engines::DownloadEvent;
 use crate::core::state::AppState;
-use inquire::{Select, ui::{Attributes, RenderConfig, Styled, Color}};
+use inquire::{Select, Text, ui::{Attributes, RenderConfig, Styled, Color}};
 use colored::Colorize;
+use serde::Deserialize;
 use std::io::Write;
+
 pub mod table;
 pub mod details;
 use crate::ui::apps::registry::table::{RegistryTable, ColumnWidths};
 
+const MODEL_LIBRARY_JSON: &str = include_str!("../../../../../models/library/catalog.json");
+const ACTION_PULL_HF: &str = "⬇  Pull from Hugging Face";
+const ACTION_MODEL_STORE: &str = "🏪  Browse Model Store";
+const ACTION_CANCEL: &str = "↩  Cancel";
+
+#[derive(Debug, Deserialize)]
+struct ModelLibrary {
+    models: Vec<ModelStoreEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelStoreEntry {
+    name: String,
+    repo: String,
+    category: String,
+    description: String,
+}
+
 pub struct RegistryApp;
 
 impl RegistryApp {
+    fn run_pull(repo_id: String) -> Result<()> {
+        let repo_id = repo_id.trim().to_string();
+        if repo_id.is_empty() {
+            return Ok(());
+        }
+
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(crate::cli::pull::execute(&repo_id))
+        })
+    }
+
+    fn pull_from_hugging_face() -> Result<()> {
+        let repo_id = Text::new("Hugging Face repository:")
+            .with_placeholder("owner/model-GGUF")
+            .prompt()?;
+        Self::run_pull(repo_id)
+    }
+
+    fn browse_model_store() -> Result<()> {
+        let library: ModelLibrary = serde_json::from_str(MODEL_LIBRARY_JSON)
+            .map_err(|error| color_eyre::eyre::eyre!("Invalid models/library/catalog.json: {}", error))?;
+
+        if library.models.is_empty() {
+            println!("  {} Model Store is empty.", "⚠️".yellow());
+            return Ok(());
+        }
+
+        let choices: Vec<String> = library.models.iter()
+            .map(|entry| {
+                format!(
+                    "{}  [{}]  {}  —  {}",
+                    entry.name,
+                    entry.category,
+                    entry.repo,
+                    entry.description
+                )
+            })
+            .chain(std::iter::once(ACTION_CANCEL.to_string()))
+            .collect();
+
+        let selection = Select::new("Model Store:", choices)
+            .with_page_size(15)
+            .prompt()?;
+
+        if selection == ACTION_CANCEL {
+            return Ok(());
+        }
+
+        if let Some(entry) = library.models.iter().find(|entry| selection.contains(&entry.repo)) {
+            return Self::run_pull(entry.repo.clone());
+        }
+
+        Err(color_eyre::eyre::eyre!("Selected Model Store entry could not be resolved."))
+    }
+
     pub fn show(state: &mut AppState, tx: &mpsc::UnboundedSender<DownloadEvent>) -> Result<()> {
         if state.sorted_models.is_empty() {
-            state.sorted_models = engines::CoreRoster::get_recommendations(&state.hardware.to_hardware_truth(), state.ram_gb);
+            state.sorted_models = engines::CoreRoster::get_recommendations(
+                &state.hardware.to_hardware_truth(),
+                state.ram_gb,
+            );
         }
 
         let total_ram = state.ram_gb;
-        
-        // ── cluaiz SORTING ──
+
         state.sorted_models.sort_by(|a, b| {
             let (_, score_a, _) = RegistryTable::calculate_health(a, &state.hardware);
             let (_, score_b, _) = RegistryTable::calculate_health(b, &state.hardware);
             score_b.cmp(&score_a)
         });
 
-        // ── 📏 COMPUTE DYNAMIC WIDTHS ──
-        let widths = ColumnWidths::compute(&state.sorted_models);
-        let table_header = RegistryTable::get_header_string(&widths);
-
-        // ── 🧭 NAVIGATION HISTORY LOG ──
         let mut history_segment: Option<String> = None;
-        let base_path = format!("{} ❯ {}", "🏠︎".dimmed(), "Model List".dimmed());
+        let base_path = format!("{} ❯ {}", "🏠︎".dimmed(), "Model Hub".dimmed());
 
         loop {
+            let widths = ColumnWidths::compute(&state.sorted_models);
+            let table_header = RegistryTable::get_header_string(&widths);
             let current_crumb = if let Some(ref seg) = history_segment {
                 format!("{} ❯ {}", base_path, seg)
             } else {
                 base_path.clone()
             };
 
-            // ── 🧼 ATOMIC RENDER BLOCK ──
             println!("{}", current_crumb);
             println!("{}", table_header);
 
-            let mut choices: Vec<String> = state.sorted_models.iter().enumerate()
-                .map(|(i, m)| RegistryTable::format_row(i, m, &widths, &state.hardware))
-                .collect();
-            
-            choices.push("↩  Cancel".to_string());
-
-        let config = RenderConfig::default()
-            .with_prompt_prefix(Styled::new("🔍 ").with_fg(Color::LightCyan))
-            .with_answered_prompt_prefix(Styled::new("🔍 ").with_fg(Color::LightCyan))
-            .with_highlighted_option_prefix(
-                Styled::new("➤")
-                    .with_fg(Color::LightCyan)
-                    .with_attr(Attributes::BOLD),
+            let mut choices = vec![
+                ACTION_PULL_HF.to_string(),
+                ACTION_MODEL_STORE.to_string(),
+            ];
+            choices.extend(
+                state.sorted_models.iter().enumerate()
+                    .map(|(i, model)| RegistryTable::format_row(i, model, &widths, &state.hardware))
             );
+            choices.push(ACTION_CANCEL.to_string());
+
+            let config = RenderConfig::default()
+                .with_prompt_prefix(Styled::new("🔍 ").with_fg(Color::LightCyan))
+                .with_answered_prompt_prefix(Styled::new("🔍 ").with_fg(Color::LightCyan))
+                .with_highlighted_option_prefix(
+                    Styled::new("➤")
+                        .with_fg(Color::LightCyan)
+                        .with_attr(Attributes::BOLD),
+                );
 
             let ans = Select::new("Search:", choices)
                 .with_page_size(15)
@@ -67,12 +145,31 @@ impl RegistryApp {
 
             match ans {
                 Ok(ans) => {
-                    if ans == "↩  Cancel" { 
-                        // Surgical cleanup: 1 (Header) + 2 (Search) = 3 lines (Leave Crumb for History)
+                    if ans == ACTION_CANCEL {
                         for _ in 0..3 { print!("\x1B[1A\x1B[2K\r"); }
                         println!("{} {}", "↩".dimmed(), "Back".dimmed());
                         let _ = std::io::stdout().flush();
-                        return Ok(()); 
+                        return Ok(());
+                    }
+
+                    if ans == ACTION_PULL_HF {
+                        Self::pull_from_hugging_face()?;
+                        state.sorted_models = engines::CoreRoster::get_recommendations(
+                            &state.hardware.to_hardware_truth(),
+                            state.ram_gb,
+                        );
+                        history_segment = Some("Hugging Face".dimmed().to_string());
+                        continue;
+                    }
+
+                    if ans == ACTION_MODEL_STORE {
+                        Self::browse_model_store()?;
+                        state.sorted_models = engines::CoreRoster::get_recommendations(
+                            &state.hardware.to_hardware_truth(),
+                            state.ram_gb,
+                        );
+                        history_segment = Some("Model Store".dimmed().to_string());
+                        continue;
                     }
 
                     let idx_str = ans.split_whitespace().next().unwrap_or("0").trim();
@@ -81,23 +178,23 @@ impl RegistryApp {
                     if let Some(rec) = state.sorted_models.get_mut(idx) {
                         let name = rec.manifest.name.clone();
                         let (_, score, _) = RegistryTable::calculate_health(rec, &state.hardware);
-                        
+
                         if score == 0 {
                             println!("\n  {} {}", "⚪".white(), "Action Blocked: Model incompatible with hardware.".bold());
                             std::thread::sleep(std::time::Duration::from_millis(1200));
-                            // Cleanup: 1 (Blocked Msg) + 4 (UI) = 5 lines
                             for _ in 0..5 { print!("\x1B[1A\x1B[2K\r"); }
-                            continue; 
+                            continue;
                         }
 
-                        // Wipe Breadcrumb + Header + Search (4 lines total) before entering details
                         for _ in 0..4 { print!("\x1B[1A\x1B[2K\r"); }
                         let _ = std::io::stdout().flush();
 
                         let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;
 
-                        // ── 🔄 STATE SYNC: Refresh model list after returning from details ──
-                        state.sorted_models = engines::CoreRoster::get_recommendations(&state.hardware.to_hardware_truth(), state.ram_gb);
+                        state.sorted_models = engines::CoreRoster::get_recommendations(
+                            &state.hardware.to_hardware_truth(),
+                            state.ram_gb,
+                        );
                         state.sorted_models.sort_by(|a, b| {
                             let (_, score_a, _) = RegistryTable::calculate_health(a, &state.hardware);
                             let (_, score_b, _) = RegistryTable::calculate_health(b, &state.hardware);
@@ -107,21 +204,14 @@ impl RegistryApp {
                         match action {
                             Some(act) if act == "DELETE" => {
                                 history_segment = Some(format!("{} ❯ {} {}", name.dimmed(), "🗑️".dimmed(), "Deleted".dimmed()));
-                                continue; 
-                            },
-                            Some(act) if act == "BACK" => {
-                                history_segment = Some(name.dimmed().to_string());
-                                continue; 
-                            },
+                            }
                             _ => {
                                 history_segment = Some(name.dimmed().to_string());
-                                continue; 
                             }
                         }
                     }
                 }
                 Err(_) => {
-                    // Surgical cleanup on Escape: 3 lines (Leave Crumb for History)
                     for _ in 0..3 { print!("\x1B[1A\x1B[2K\r"); }
                     println!("{} {}", "↩".dimmed(), "Back".dimmed());
                     let _ = std::io::stdout().flush();
@@ -129,7 +219,7 @@ impl RegistryApp {
                 }
             }
         }
-        
+
         Ok(())
     }
 }
