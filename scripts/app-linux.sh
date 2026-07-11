@@ -129,6 +129,7 @@ SOURCE_MIGRATIONS=(
   fix-model-runtime.py
   fix-registry-cache.py
   fix-model-hub-load.py
+  fix-bitnet-routing.py
 )
 
 log "Applying complete BitShit source migration pipeline"
