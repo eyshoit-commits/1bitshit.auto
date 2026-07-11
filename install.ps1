@@ -65,7 +65,7 @@ Need cmake
 $HasMsvc = [bool](Get-Command cl.exe -ErrorAction SilentlyContinue)
 $HasClang = [bool](Get-Command clang-cl.exe -ErrorAction SilentlyContinue)
 if (-not $HasMsvc -and -not $HasClang) {
-    Fail 'Missing Windows C++ compiler. Start from a Visual Studio Developer PowerShell or install Visual Studio Build Tools with Desktop development with C++.'
+    Fail 'Missing Windows C++ compiler. Open x64 Native Tools Command Prompt for Visual Studio, then run install.cmd, or install Visual Studio Build Tools with Desktop development with C++.'
 }
 
 $HasCuda = Test-CudaToolchain
@@ -90,6 +90,8 @@ Migrate-LegacyData
 New-Item -ItemType Directory -Force -Path $HomeDir, $BinDir | Out-Null
 if (Test-Path (Join-Path $SourceDir '.git')) {
     Write-Step 'Updating source checkout'
+    git -C $SourceDir remote set-url origin $Repo
+    if ($LASTEXITCODE -ne 0) { Fail 'Failed to retarget source checkout to 1bitshit.auto.' }
     git -C $SourceDir fetch origin --prune
     git -C $SourceDir checkout -q main
     git -C $SourceDir reset --hard origin/main
@@ -100,13 +102,16 @@ if (Test-Path (Join-Path $SourceDir '.git')) {
 }
 
 if ($LASTEXITCODE -ne 0) { Fail 'Repository checkout failed.' }
+$CurrentRemote = (git -C $SourceDir remote get-url origin).Trim()
+if ($CurrentRemote -ne $Repo) { Fail "Source checkout points to unexpected repository: $CurrentRemote" }
+
 git -C $SourceDir submodule sync --recursive
 if ($LASTEXITCODE -ne 0) { Fail 'Submodule synchronization failed.' }
 git -C $SourceDir submodule update --init --recursive
 if ($LASTEXITCODE -ne 0) { Fail 'Submodule checkout failed.' }
 
 $env:BITSHIT_HOME = $HomeDir
-$env:CLUAIZ_HOME = $HomeDir # temporary internal compatibility during crate migration
+$env:CLUAIZ_HOME = $HomeDir
 $env:GGML_CUDA = if ($Backend -eq 'cuda') { 'ON' } else { 'OFF' }
 $env:GGML_HIPBLAS = 'OFF'
 $env:GGML_METAL = 'OFF'
