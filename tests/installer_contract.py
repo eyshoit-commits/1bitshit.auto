@@ -24,16 +24,40 @@ def forbid(text: str, needle: str, path: str) -> None:
 
 def main() -> int:
     launcher = read("install.sh")
+    windows_launcher = read("install.ps1")
+    linux_setup = read("scripts/setup-linux.sh")
+    windows_setup = read("scripts/setup-windows.ps1")
     linux = read("scripts/app-linux.sh")
     windows = read("scripts/app-windows.ps1")
     docs = read("docs/PATH_MIGRATION.md")
+    readme = read("README.md")
 
     for fragment in (
         "--backend auto|cpu|cuda|rocm",
         "--no-legacy-alias",
         "--no-migrate",
+        "--no-launch",
     ):
         require(launcher, fragment, "install.sh")
+
+    for fragment in (
+        "$NoLaunch = $false",
+        "--?no-launch",
+        "$Forward.NoLaunch = $true",
+    ):
+        require(windows_launcher, fragment, "install.ps1")
+
+    for fragment in (
+        "--no-launch",
+        "PASS_ARGS+=(\"$1\")",
+    ):
+        require(linux_setup, fragment, "scripts/setup-linux.sh")
+
+    for fragment in (
+        "[switch]$NoLaunch",
+        "$AppArgs.NoLaunch = $true",
+    ):
+        require(windows_setup, fragment, "scripts/setup-windows.ps1")
 
     for fragment in (
         'DATA_DIR="${BITSHIT_HOME:-$HOME/.bitshit}"',
@@ -43,6 +67,8 @@ def main() -> int:
         'copy_missing_tree "$LEGACY_DATA_DIR" ".migrated-from-cluaiz"',
         'mode=copy-missing',
         '"migration_mode":"copy-missing"',
+        "--no-launch",
+        '[[ $LAUNCH_AFTER_INSTALL -eq 1 ]]',
     ):
         require(linux, fragment, "scripts/app-linux.sh")
 
@@ -54,6 +80,8 @@ def main() -> int:
         "Copy-MissingTree $LegacyHome '.migrated-from-cluaiz'",
         "migration_mode='copy-missing'",
         "$env:CLUAIZ_HOME = $HomeDir",
+        "[switch]$NoLaunch",
+        "if (-not $NoLaunch)",
     ):
         require(windows, fragment, "scripts/app-windows.ps1")
 
@@ -76,9 +104,19 @@ def main() -> int:
     ):
         require(docs, fragment, "docs/PATH_MIGRATION.md")
 
-    forbid(linux, 'LEGACY_DATA_DIR="${CLUAIZ_LEGACY_HOME:-${CLUAIZ_HOME:', "scripts/app-linux.sh")
+    for fragment in (
+        "eyshoit-commits/1bitshit.auto",
+        "--no-launch",
+        "-NoLaunch",
+        "~/.1bitshit",
+        "~/.cluaiz",
+    ):
+        require(readme, fragment, "README.md")
 
-    print("BitShit installer migration contract: OK")
+    forbid(linux, 'LEGACY_DATA_DIR="${CLUAIZ_LEGACY_HOME:-${CLUAIZ_HOME:', "scripts/app-linux.sh")
+    forbid(readme, "eyshoit-commits/bitshit.cpu", "README.md")
+
+    print("BitShit installer migration and launch contract: OK")
     return 0
 
 
