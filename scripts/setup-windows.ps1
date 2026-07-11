@@ -54,13 +54,13 @@ Install-Msys2
 
 Step 'Aktualisiere MSYS2 und installiere die vollständige UCRT64-Buildumgebung.'
 Invoke-Msys 'pacman -Sy --noconfirm'
-Invoke-Msys 'pacman -S --needed --noconfirm base-devel git make cmake ninja pkgconf mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-rust'
+Invoke-Msys 'pacman -S --needed --noconfirm base-devel git make cmake ninja pkgconf mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-rust mingw-w64-ucrt-x86_64-python'
 
 $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
 $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
 $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
 
-foreach ($Tool in @('cargo.exe','rustc.exe','gcc.exe','g++.exe','cmake.exe','ninja.exe','make.exe')) {
+foreach ($Tool in @('cargo.exe','rustc.exe','python.exe','gcc.exe','g++.exe','cmake.exe','ninja.exe','make.exe')) {
     if (-not (Has $Tool)) { Fail "$Tool fehlt nach der MSYS2-Installation." }
 }
 
