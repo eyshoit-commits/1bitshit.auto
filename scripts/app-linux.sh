@@ -38,6 +38,7 @@ need cargo
 need rustc
 need cmake
 need make
+need python3
 
 if command -v c++ >/dev/null 2>&1; then CXX_BIN="$(command -v c++)"
 elif command -v clang++ >/dev/null 2>&1; then CXX_BIN="$(command -v clang++)"
@@ -97,6 +98,12 @@ export CXX="$CXX_BIN"
 export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF
 [[ "$BACKEND" == cuda ]] && export GGML_CUDA=ON
 [[ "$BACKEND" == rocm ]] && export GGML_HIPBLAS=ON
+
+log "Applying public runtime migration"
+(
+  cd "$SOURCE_DIR"
+  python3 scripts/rebrand-main-cli.py
+)
 
 log "Building backend=$BACKEND profile=$PROFILE"
 (
