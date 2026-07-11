@@ -7,15 +7,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Repo = 'https://github.com/eyshoit-commits/bitshit.cpu.git'
+$Repo = 'https://github.com/eyshoit-commits/1bitshit.auto.git'
 $HomeDir = if ($env:BITSHIT_HOME) { $env:BITSHIT_HOME } else { Join-Path $HOME '.bitshit' }
 $LegacyHome = if ($env:CLUAIZ_HOME) { $env:CLUAIZ_HOME } else { Join-Path $HOME '.cluaiz' }
 $SourceDir = if ($env:BITSHIT_SOURCE_DIR) { $env:BITSHIT_SOURCE_DIR } else { Join-Path $HomeDir 'source' }
 $BinDir = if ($env:BITSHIT_INSTALL_DIR) { $env:BITSHIT_INSTALL_DIR } else { Join-Path $HomeDir 'bin' }
 $Profile = if ($env:BITSHIT_PROFILE) { $env:BITSHIT_PROFILE } else { 'release' }
+$TargetProfileDir = if ($Profile -eq 'dev') { 'debug' } else { $Profile }
 $MigrationMarker = Join-Path $HomeDir '.migrated-from-cluaiz'
 
 function Write-Step([string]$Message) { Write-Host "[bitshit] $Message" -ForegroundColor Cyan }
+function Write-WarningStep([string]$Message) { Write-Warning "[bitshit] $Message" }
 function Fail([string]$Message) { throw "[bitshit] $Message" }
 function Need([string]$Command) {
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) { Fail "Missing required command: $Command" }
@@ -112,13 +114,20 @@ $env:GGML_METAL = 'OFF'
 Write-Step "Building backend=$Backend profile=$Profile"
 Push-Location $SourceDir
 try {
-    cargo build --locked --profile $Profile -p cmd --bin bitshit
+    if (Test-Path 'Cargo.lock') {
+        cargo build --locked --profile $Profile -p cmd --bin bitshit
+    } else {
+        Write-WarningStep 'Cargo.lock is missing; generating a lockfile before the build'
+        cargo generate-lockfile
+        if ($LASTEXITCODE -ne 0) { Fail "Cargo lockfile generation failed with exit code $LASTEXITCODE." }
+        cargo build --profile $Profile -p cmd --bin bitshit
+    }
     if ($LASTEXITCODE -ne 0) { Fail "Cargo build failed with exit code $LASTEXITCODE." }
 } finally {
     Pop-Location
 }
 
-$Built = Join-Path $SourceDir "target\$Profile\bitshit.exe"
+$Built = Join-Path $SourceDir "target\$TargetProfileDir\bitshit.exe"
 if (-not (Test-Path $Built)) { Fail "Build completed without producing $Built" }
 $Target = Join-Path $BinDir 'bitshit.exe'
 Copy-Item -Force $Built $Target
