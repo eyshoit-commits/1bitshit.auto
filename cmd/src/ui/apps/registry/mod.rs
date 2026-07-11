@@ -5,6 +5,7 @@ use crate::core::state::AppState;
 use inquire::{Select, Text, ui::{Attributes, RenderConfig, Styled, Color}};
 use colored::Colorize;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::io::Write;
 
 pub mod table;
@@ -32,6 +33,34 @@ struct ModelStoreEntry {
 pub struct RegistryApp;
 
 impl RegistryApp {
+    fn refresh_models(state: &mut AppState) {
+        let mut seen = HashSet::new();
+        let mut models = engines::CoreRoster::get_recommendations(
+            &state.hardware.to_hardware_truth(),
+            state.ram_gb,
+        );
+
+        models.retain(|model| {
+            let key = format!(
+                "{}|{}|{}",
+                model.manifest.id.to_ascii_lowercase(),
+                model.manifest.huggingface_repo.to_ascii_lowercase(),
+                model.manifest.huggingface_filename.to_ascii_lowercase(),
+            );
+            seen.insert(key)
+        });
+
+        models.sort_by(|a, b| {
+            let (_, score_a, _) = RegistryTable::calculate_health(a, &state.hardware);
+            let (_, score_b, _) = RegistryTable::calculate_health(b, &state.hardware);
+            score_b
+                .cmp(&score_a)
+                .then_with(|| a.manifest.name.cmp(&b.manifest.name))
+        });
+
+        state.sorted_models = models;
+    }
+
     fn run_pull(repo_id: String) -> Result<()> {
         let repo_id = repo_id.trim().to_string();
         if repo_id.is_empty() {
@@ -60,7 +89,7 @@ impl RegistryApp {
             return Ok(());
         }
 
-        let choices: Vec<String> = library.models.iter()
+        let mut choices: Vec<String> = library.models.iter()
             .map(|entry| {
                 format!(
                     "{}  [{}]  {}  —  {}",
@@ -70,8 +99,8 @@ impl RegistryApp {
                     entry.description
                 )
             })
-            .chain(std::iter::once(ACTION_CANCEL.to_string()))
             .collect();
+        choices.push(ACTION_CANCEL.to_string());
 
         let selection = Select::new("Model Store:", choices)
             .with_page_size(15)
@@ -81,29 +110,17 @@ impl RegistryApp {
             return Ok(());
         }
 
-        if let Some(entry) = library.models.iter().find(|entry| selection.contains(&entry.repo)) {
-            return Self::run_pull(entry.repo.clone());
-        }
+        let entry = library.models.iter()
+            .find(|entry| selection.contains(&entry.repo))
+            .ok_or_else(|| color_eyre::eyre::eyre!("Selected Model Store entry could not be resolved."))?;
 
-        Err(color_eyre::eyre::eyre!("Selected Model Store entry could not be resolved."))
+        Self::run_pull(entry.repo.clone())
     }
 
     pub fn show(state: &mut AppState, tx: &mpsc::UnboundedSender<DownloadEvent>) -> Result<()> {
-        if state.sorted_models.is_empty() {
-            state.sorted_models = engines::CoreRoster::get_recommendations(
-                &state.hardware.to_hardware_truth(),
-                state.ram_gb,
-            );
-        }
+        Self::refresh_models(state);
 
         let total_ram = state.ram_gb;
-
-        state.sorted_models.sort_by(|a, b| {
-            let (_, score_a, _) = RegistryTable::calculate_health(a, &state.hardware);
-            let (_, score_b, _) = RegistryTable::calculate_health(b, &state.hardware);
-            score_b.cmp(&score_a)
-        });
-
         let mut history_segment: Option<String> = None;
         let base_path = format!("{} ❯ {}", "🏠︎".dimmed(), "Model Hub".dimmed());
 
@@ -154,20 +171,14 @@ impl RegistryApp {
 
                     if ans == ACTION_PULL_HF {
                         Self::pull_from_hugging_face()?;
-                        state.sorted_models = engines::CoreRoster::get_recommendations(
-                            &state.hardware.to_hardware_truth(),
-                            state.ram_gb,
-                        );
+                        Self::refresh_models(state);
                         history_segment = Some("Hugging Face".dimmed().to_string());
                         continue;
                     }
 
                     if ans == ACTION_MODEL_STORE {
                         Self::browse_model_store()?;
-                        state.sorted_models = engines::CoreRoster::get_recommendations(
-                            &state.hardware.to_hardware_truth(),
-                            state.ram_gb,
-                        );
+                        Self::refresh_models(state);
                         history_segment = Some("Model Store".dimmed().to_string());
                         continue;
                     }
@@ -190,16 +201,7 @@ impl RegistryApp {
                         let _ = std::io::stdout().flush();
 
                         let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;
-
-                        state.sorted_models = engines::CoreRoster::get_recommendations(
-                            &state.hardware.to_hardware_truth(),
-                            state.ram_gb,
-                        );
-                        state.sorted_models.sort_by(|a, b| {
-                            let (_, score_a, _) = RegistryTable::calculate_health(a, &state.hardware);
-                            let (_, score_b, _) = RegistryTable::calculate_health(b, &state.hardware);
-                            score_b.cmp(&score_a)
-                        });
+                        Self::refresh_models(state);
 
                         match action {
                             Some(act) if act == "DELETE" => {
