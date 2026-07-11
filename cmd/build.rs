@@ -47,13 +47,16 @@ fn main() {
     // the current migrations. This makes existing working copies recover automatically.
     run_source_migration(repo_root, "repair-openmp-duplicates.py");
     run_source_migration(repo_root, "rebrand-main-cli.py");
+    run_source_migration(repo_root, "fix-public-branding.py");
     run_source_migration(repo_root, "fix-model-runtime.py");
     run_source_migration(repo_root, "fix-registry-cache.py");
     run_source_migration(repo_root, "fix-model-hub-load.py");
 
     println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/main.rs").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/cli/pull.rs").display());
+    println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/core/dashboard.rs").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/ui/apps/registry/mod.rs").display());
+    println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/ui/apps/registry/details.rs").display());
 
     #[cfg(windows)]
     {
