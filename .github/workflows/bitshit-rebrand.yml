@@ -30,7 +30,7 @@ jobs:
           submodules: recursive
 
       - name: Validate shell syntax
-        run: bash -n install.sh scripts/verify-bitshit-rebrand.sh
+        run: bash -n install.sh scripts/verify-bitshit-rebrand.sh scripts/audit-bitshit-public-brand.sh
 
       - name: Validate PowerShell syntax
         shell: pwsh
@@ -49,6 +49,9 @@ jobs:
 
       - name: Verify BitShit rebrand invariants
         run: bash scripts/verify-bitshit-rebrand.sh
+
+      - name: Audit public CLI identity
+        run: bash scripts/audit-bitshit-public-brand.sh
 
   cargo-metadata:
     name: Cargo metadata (${{ matrix.os }})
