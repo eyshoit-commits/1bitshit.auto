@@ -50,6 +50,11 @@ function Invoke-Msys([string]$Command) {
     if ($LASTEXITCODE -ne 0) { Fail "MSYS2-Befehl fehlgeschlagen: $Command" }
 }
 
+function Test-MsysPackage([string]$Package) {
+    & $MsysBash -lc "pacman -Si '$Package' >/dev/null 2>&1"
+    return $LASTEXITCODE -eq 0
+}
+
 function Resolve-CudaToolkit {
     $Candidates = New-Object System.Collections.Generic.List[string]
 
@@ -96,13 +101,9 @@ function Resolve-CudaToolkit {
 }
 
 function Install-CudaToolkit {
-    if (-not (Has 'winget.exe')) {
-        Fail 'CUDA Toolkit fehlt und winget ist nicht verfügbar. Installiere App Installer aus dem Microsoft Store oder das NVIDIA CUDA Toolkit manuell.'
-    }
-
     $Install = $Yes
     if (-not $Yes) {
-        $Answer = Read-Host 'CUDA Toolkit fehlt. Jetzt automatisch mit winget installieren? [J/n]'
+        $Answer = Read-Host 'CUDA Toolkit fehlt. Jetzt automatisch installieren? [J/n]'
         $Install = [string]::IsNullOrWhiteSpace($Answer) -or $Answer -match '^(?i:j|ja|y|yes)$'
     }
 
@@ -110,7 +111,30 @@ function Install-CudaToolkit {
         Fail 'CUDA Toolkit wurde nicht installiert. Starte den Installer erneut oder verwende --backend cpu.'
     }
 
-    Step 'Installiere NVIDIA CUDA Toolkit über winget. Das kann einige Minuten dauern.'
+    $PacmanPackages = @(
+        'mingw-w64-ucrt-x86_64-cuda',
+        'mingw-w64-x86_64-cuda',
+        'cuda'
+    )
+
+    foreach ($Package in $PacmanPackages) {
+        if (Test-MsysPackage $Package) {
+            Step "Installiere CUDA Toolkit über MSYS2/pacman: $Package"
+            Invoke-Msys "pacman -S --needed --noconfirm '$Package'"
+            $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
+            $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
+            $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
+            $Cuda = Resolve-CudaToolkit
+            if ($Cuda) { return $Cuda }
+        }
+    }
+
+    Step 'In den aktiven MSYS2-Repositories wurde kein CUDA-Toolkit-Paket mit nvcc gefunden.'
+    if (-not (Has 'winget.exe')) {
+        Fail 'CUDA Toolkit fehlt. pacman bietet kein passendes Paket an und winget ist nicht verfügbar. Installiere das NVIDIA CUDA Toolkit manuell oder verwende --backend cpu.'
+    }
+
+    Step 'Fallback: Installiere NVIDIA CUDA Toolkit über winget.'
     & winget.exe install --id Nvidia.CUDA --exact --source winget --accept-package-agreements --accept-source-agreements --silent
     if ($LASTEXITCODE -ne 0) {
         Fail "winget konnte das NVIDIA CUDA Toolkit nicht installieren (Exitcode $LASTEXITCODE)."
