@@ -14,6 +14,24 @@ fail() {
   exit 1
 }
 
+# Git Bash, MSYS2 and Cygwin run on Windows. Use the native PowerShell
+# updater there so the Windows installer and toolchain checks are used.
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*)
+    command -v powershell.exe >/dev/null 2>&1 || fail "powershell.exe wurde nicht gefunden."
+    WINDOWS_SCRIPT="$REPO_ROOT/update.ps1"
+    if command -v cygpath >/dev/null 2>&1; then
+      WINDOWS_SCRIPT="$(cygpath -w "$WINDOWS_SCRIPT")"
+    fi
+    say "Windows Git Bash erkannt. Starte PowerShell Update."
+    if [[ -n "$BACKEND" ]]; then
+      exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WINDOWS_SCRIPT" "$BACKEND"
+    else
+      exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WINDOWS_SCRIPT"
+    fi
+    ;;
+esac
+
 command -v git >/dev/null 2>&1 || fail "git wurde nicht gefunden."
 
 cd "$REPO_ROOT"
