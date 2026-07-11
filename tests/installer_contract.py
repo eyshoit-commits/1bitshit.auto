@@ -29,6 +29,9 @@ def main() -> int:
     windows_setup = read("scripts/setup-windows.ps1")
     linux = read("scripts/app-linux.sh")
     windows = read("scripts/app-windows.ps1")
+    linux_update = read("update.sh")
+    windows_update = read("update.ps1")
+    cmd_update = read("update.cmd")
     docs = read("docs/PATH_MIGRATION.md")
     readme = read("README.md")
 
@@ -85,6 +88,35 @@ def main() -> int:
     ):
         require(windows, fragment, "scripts/app-windows.ps1")
 
+    for fragment in (
+        "--backend=*)",
+        "--no-legacy-alias",
+        "--no-migrate",
+        "--no-launch",
+        'INSTALL_ARGS=(--backend "$BACKEND" --yes)',
+        'bash "$REPO_ROOT/install.sh" "${INSTALL_ARGS[@]}"',
+        'auto|cpu|cuda|rocm)',
+    ):
+        require(linux_update, fragment, "update.sh")
+    forbid(linux_update, "auto|cpu|cuda|rocm|metal", "update.sh")
+
+    for fragment in (
+        "$NoLegacyAlias = $false",
+        "$NoMigrate = $false",
+        "$NoLaunch = $false",
+        "--?no-legacy-alias",
+        "--?no-migrate",
+        "--?no-launch",
+        "$Forward.NoLegacyAlias = $true",
+        "$Forward.NoMigrate = $true",
+        "$Forward.NoLaunch = $true",
+        "Yes = $true",
+    ):
+        require(windows_update, fragment, "update.ps1")
+
+    require(cmd_update, '"%~dp0update.ps1" %*', "update.cmd")
+    forbid(cmd_update, 'set "BACKEND=%~1"', "update.cmd")
+
     interim_pos = windows.index("Copy-MissingTree $InterimHome")
     legacy_pos = windows.index("Copy-MissingTree $LegacyHome")
     if interim_pos >= legacy_pos:
@@ -110,13 +142,15 @@ def main() -> int:
         "-NoLaunch",
         "~/.1bitshit",
         "~/.cluaiz",
+        "./update.sh --no-launch",
+        "update.cmd --no-launch",
     ):
         require(readme, fragment, "README.md")
 
     forbid(linux, 'LEGACY_DATA_DIR="${CLUAIZ_LEGACY_HOME:-${CLUAIZ_HOME:', "scripts/app-linux.sh")
     forbid(readme, "eyshoit-commits/bitshit.cpu", "README.md")
 
-    print("BitShit installer migration and launch contract: OK")
+    print("BitShit installer, updater, migration and launch contract: OK")
     return 0
 
 
