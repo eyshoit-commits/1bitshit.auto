@@ -14,26 +14,35 @@ kept under `models/library`.
 `CLUAIZ_HOME` is retained only as an internal compatibility environment variable
 for crates and FFI components that still use the historical name. Installers set
 it to the same canonical directory as `BITSHIT_HOME`. New public data must not be
-written to `~/.cluaiz`.
+written to `~/.cluaiz` or `~/.1bitshit`.
 
 ## Legacy migration
 
-The default legacy source is `~/.cluaiz`. It can be overridden with
-`CLUAIZ_LEGACY_HOME` when testing or recovering a custom installation.
+Two historical runtime locations are recognized:
+
+1. `~/.1bitshit`, the short-lived interim BitShit path.
+2. `~/.cluaiz`, the original runtime path.
+
+They can be overridden for testing or recovery with `BITSHIT_INTERIM_HOME` and
+`CLUAIZ_LEGACY_HOME`.
 
 Migration has the following contract:
 
-1. It is idempotent.
-2. Existing BitShit files win and are never overwritten by legacy data.
-3. Legacy files are copied, not deleted or moved.
-4. Linux records the completed runtime migration in
-   `$BITSHIT_HOME/.migrated-from-cluaiz`.
-5. Model files are copied separately into `BITSHIT_MODELS_DIR` because model
+1. It is idempotent on Linux and Windows.
+2. Existing files under `BITSHIT_HOME` always win and are never overwritten.
+3. Historical files are copied, not deleted or moved.
+4. `~/.1bitshit` is processed before `~/.cluaiz`, because it is the newer source.
+5. Each source receives its own marker:
+   - `$BITSHIT_HOME/.migrated-from-1bitshit`
+   - `$BITSHIT_HOME/.migrated-from-cluaiz`
+6. Marker files record source, target, UTC timestamp, and `mode=copy-missing`.
+7. Model files are copied separately into `BITSHIT_MODELS_DIR` because model
    storage can be outside the runtime home.
-6. `--no-migrate` disables automatic legacy migration.
+8. `--no-migrate` on Unix-like launchers and `-NoMigrate` on PowerShell disable
+   both automatic migrations.
 
-Keeping the old directory intact is deliberate. A failed build must not turn a
-rebrand into an improvised data-loss utility.
+Keeping both historical directories intact is deliberate. A failed build must
+not turn a rebrand into an improvised data-loss utility, a niche nobody requested.
 
 ## Installer backends
 
@@ -58,7 +67,13 @@ Examples:
 
 ## Result metadata
 
-A successful installation writes `$BITSHIT_HOME/install.json`. The `runtime`
-field must point to `BITSHIT_HOME`, while `legacy_source` identifies the old data
-source when applicable. Internal engine filenames may still contain `cluaiz`
-until the ABI migration is completed; that does not change their storage root.
+A successful installation writes `$BITSHIT_HOME/install.json`. Both platform
+installers now emit the same migration-related fields:
+
+- `runtime`: canonical `BITSHIT_HOME`
+- `interim_source`: the `.1bitshit` source
+- `legacy_source`: the `.cluaiz` source
+- `migration_mode`: `copy-missing`
+
+Internal engine filenames may still contain `cluaiz` until the ABI migration is
+completed; that does not change their canonical storage root.
