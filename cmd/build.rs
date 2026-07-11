@@ -45,9 +45,11 @@ fn main() {
 
     run_source_migration(repo_root, "rebrand-main-cli.py");
     run_source_migration(repo_root, "fix-model-runtime.py");
+    run_source_migration(repo_root, "fix-registry-cache.py");
 
     println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/main.rs").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/cli/pull.rs").display());
+    println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/ui/apps/registry/mod.rs").display());
 
     #[cfg(windows)]
     {
