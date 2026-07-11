@@ -50,6 +50,51 @@ function Invoke-Msys([string]$Command) {
     if ($LASTEXITCODE -ne 0) { Fail "MSYS2-Befehl fehlgeschlagen: $Command" }
 }
 
+function Resolve-CudaToolkit {
+    $Candidates = New-Object System.Collections.Generic.List[string]
+
+    foreach ($VariableName in @('CUDA_PATH', 'CUDA_HOME', 'CUDA_ROOT')) {
+        $Value = [Environment]::GetEnvironmentVariable($VariableName)
+        if ($Value) { $Candidates.Add($Value) }
+    }
+
+    Get-ChildItem Env: | Where-Object { $_.Name -match '^CUDA_PATH_V\d+_\d+$' } | ForEach-Object {
+        if ($_.Value) { $Candidates.Add($_.Value) }
+    }
+
+    $DefaultRoot = Join-Path $env:ProgramFiles 'NVIDIA GPU Computing Toolkit\CUDA'
+    if (Test-Path $DefaultRoot) {
+        Get-ChildItem -Path $DefaultRoot -Directory -ErrorAction SilentlyContinue |
+            Sort-Object {
+                if ($_.Name -match '^v(\d+)\.(\d+)$') {
+                    ([int]$Matches[1] * 1000) + [int]$Matches[2]
+                } else { 0 }
+            } -Descending |
+            ForEach-Object { $Candidates.Add($_.FullName) }
+    }
+
+    foreach ($Candidate in $Candidates | Select-Object -Unique) {
+        $Nvcc = Join-Path $Candidate 'bin\nvcc.exe'
+        if (Test-Path $Nvcc) {
+            return [PSCustomObject]@{
+                Root = (Resolve-Path $Candidate).Path
+                Nvcc = (Resolve-Path $Nvcc).Path
+            }
+        }
+    }
+
+    $Command = Get-Command nvcc.exe -ErrorAction SilentlyContinue
+    if ($Command) {
+        $NvccPath = $Command.Source
+        return [PSCustomObject]@{
+            Root = Split-Path -Parent (Split-Path -Parent $NvccPath)
+            Nvcc = $NvccPath
+        }
+    }
+
+    return $null
+}
+
 Install-Msys2
 
 Step 'Aktualisiere MSYS2 und installiere die vollständige UCRT64-Buildumgebung.'
@@ -76,9 +121,19 @@ foreach ($ToolPath in @(
 
 if ($Backend -eq 'cuda') {
     if (-not (Has 'nvidia-smi.exe')) { Fail 'CUDA wurde gewählt, aber der NVIDIA-Treiber fehlt.' }
-    if (-not (Has 'nvcc.exe')) {
-        Fail 'CUDA wurde gewählt, aber nvcc.exe fehlt. Installiere das NVIDIA CUDA Toolkit und starte das Terminal neu.'
+
+    $Cuda = Resolve-CudaToolkit
+    if (-not $Cuda) {
+        Fail 'CUDA wurde gewählt, aber kein CUDA Toolkit mit nvcc.exe wurde gefunden. Installiere das NVIDIA CUDA Toolkit. Der NVIDIA-Treiber allein reicht nicht.'
     }
+
+    $env:CUDA_PATH = $Cuda.Root
+    $env:CUDA_HOME = $Cuda.Root
+    $env:CUDACXX = $Cuda.Nvcc
+    $env:NVCC = $Cuda.Nvcc
+    $env:Path = "$(Join-Path $Cuda.Root 'bin');$env:Path"
+    Step "CUDA Toolkit erkannt: $($Cuda.Root)"
+    Step "nvcc: $($Cuda.Nvcc)"
 }
 
 $env:BITSHIT_WINDOWS_TOOLCHAIN = 'msys2-ucrt64'
@@ -94,9 +149,9 @@ $env:OPENSSL_LIB_DIR = "$MsysRoot\ucrt64\lib"
 $env:OPENSSL_INCLUDE_DIR = "$MsysRoot\ucrt64\include"
 
 $App = Join-Path $RepoRoot 'scripts\app-windows.ps1'
-$AppArgs = @('-Backend', $Backend)
-if ($Yes) { $AppArgs += '-Yes' }
-if ($NoLegacyAlias) { $AppArgs += '-NoLegacyAlias' }
-if ($NoMigrate) { $AppArgs += '-NoMigrate' }
+$AppArgs = @{ Backend = $Backend }
+if ($Yes) { $AppArgs.Yes = $true }
+if ($NoLegacyAlias) { $AppArgs.NoLegacyAlias = $true }
+if ($NoMigrate) { $AppArgs.NoMigrate = $true }
 & $App @AppArgs
 if ($LASTEXITCODE -ne 0) { Fail "Windows-Installation ist mit Exitcode $LASTEXITCODE fehlgeschlagen." }
