@@ -3,7 +3,9 @@ name: Installer contract
 on:
   push:
     paths:
+      - README.md
       - install.sh
+      - install.ps1
       - scripts/app-linux.sh
       - scripts/setup-linux.sh
       - scripts/app-windows.ps1
@@ -13,7 +15,9 @@ on:
       - .github/workflows/installer-contract.yml
   pull_request:
     paths:
+      - README.md
       - install.sh
+      - install.ps1
       - scripts/app-linux.sh
       - scripts/setup-linux.sh
       - scripts/app-windows.ps1
@@ -56,7 +60,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $files = @('scripts/setup-windows.ps1', 'scripts/app-windows.ps1')
+          $files = @('install.ps1', 'scripts/setup-windows.ps1', 'scripts/app-windows.ps1')
           foreach ($file in $files) {
             $tokens = $null
             $errors = $null
