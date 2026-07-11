@@ -9,12 +9,20 @@ on:
       - update.sh
       - update.ps1
       - update.cmd
+      - cmd/build.rs
       - scripts/app-linux.sh
       - scripts/setup-linux.sh
       - scripts/app-windows.ps1
       - scripts/setup-windows.ps1
+      - scripts/repair-openmp-duplicates.py
+      - scripts/rebrand-main-cli.py
+      - scripts/fix-public-branding.py
+      - scripts/fix-model-runtime.py
+      - scripts/fix-registry-cache.py
+      - scripts/fix-model-hub-load.py
       - tests/installer_contract.py
       - docs/PATH_MIGRATION.md
+      - docs/SOURCE_MIGRATIONS.md
       - .github/workflows/installer-contract.yml
   pull_request:
     paths:
@@ -24,12 +32,20 @@ on:
       - update.sh
       - update.ps1
       - update.cmd
+      - cmd/build.rs
       - scripts/app-linux.sh
       - scripts/setup-linux.sh
       - scripts/app-windows.ps1
       - scripts/setup-windows.ps1
+      - scripts/repair-openmp-duplicates.py
+      - scripts/rebrand-main-cli.py
+      - scripts/fix-public-branding.py
+      - scripts/fix-model-runtime.py
+      - scripts/fix-registry-cache.py
+      - scripts/fix-model-hub-load.py
       - tests/installer_contract.py
       - docs/PATH_MIGRATION.md
+      - docs/SOURCE_MIGRATIONS.md
       - .github/workflows/installer-contract.yml
   workflow_dispatch:
 
@@ -53,6 +69,21 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/installer_contract.py', run_name='__main__')
+
+      - name: Validate migration script syntax
+        shell: python
+        run: |
+          import py_compile
+          scripts = [
+              'scripts/repair-openmp-duplicates.py',
+              'scripts/rebrand-main-cli.py',
+              'scripts/fix-public-branding.py',
+              'scripts/fix-model-runtime.py',
+              'scripts/fix-registry-cache.py',
+              'scripts/fix-model-hub-load.py',
+          ]
+          for script in scripts:
+              py_compile.compile(script, doraise=True)
 
       - name: Validate Bash syntax
         if: runner.os == 'Linux'
