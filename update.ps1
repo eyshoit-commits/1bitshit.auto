@@ -5,8 +5,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BitShitHome = if ($env:BITSHIT_HOME) { $env:BITSHIT_HOME } else { Join-Path $HOME '.bitshit' }
-$InstallState = Join-Path $BitShitHome 'install.json'
 
 function Say([string]$Message) {
     Write-Host $Message
@@ -44,35 +42,22 @@ if ($CurrentBranch -ne 'main') {
 git reset --hard origin/main
 if ($LASTEXITCODE -ne 0) { Fail 'Aktualisierung auf origin/main ist fehlgeschlagen.' }
 
-if ([string]::IsNullOrWhiteSpace($Backend) -and (Test-Path $InstallState)) {
-    try {
-        $SavedBackend = (Get-Content -Raw $InstallState | ConvertFrom-Json).backend
-        if ($SavedBackend -in @('auto','cpu','cuda')) {
-            $Backend = $SavedBackend
-        }
-    } catch {
-        $Backend = ''
-    }
-}
-
-if ([string]::IsNullOrWhiteSpace($Backend)) {
-    $Backend = 'cpu'
-    Say 'Kein frueheres Backend gefunden. Verwende CPU.'
-} else {
-    Say "Verwende Backend: $Backend"
-}
-
-if ($Backend -notin @('auto','cpu','cuda')) {
-    Fail "Ungueltiges Backend: $Backend. Erlaubt sind auto, cpu oder cuda."
-}
-
 $Installer = Join-Path $RepoRoot 'install.ps1'
 if (-not (Test-Path $Installer)) {
     Fail 'install.ps1 fehlt im Repository.'
 }
 
 Say 'Starte Aktualisierung und Neuinstallation.'
-& $Installer -Backend $Backend -Yes
+if ([string]::IsNullOrWhiteSpace($Backend)) {
+    & $Installer
+} else {
+    if ($Backend -notin @('auto','cpu','cuda')) {
+        Fail "Ungueltiges Backend: $Backend. Erlaubt sind auto, cpu oder cuda."
+    }
+    Say "Verwende Backend: $Backend"
+    & $Installer -Backend $Backend -Yes
+}
+
 if ($LASTEXITCODE -ne 0) {
     Fail "Installation ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
 }
