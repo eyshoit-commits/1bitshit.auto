@@ -17,7 +17,8 @@ pub struct HfVariant {
 pub struct HuggingFaceHub;
 
 impl HuggingFaceHub {
-    /// List all supported model variants (GGUF or ONNX) in a repository
+    /// List only GGUF model variants. Other formats require dedicated loaders
+    /// and must never be presented to the GGUF runtime as selectable weights.
     pub async fn list_variants(repo_id: &str) -> Result<Vec<HfVariant>, String> {
         let client = Client::new();
         let url = format!("https://huggingface.co/api/models/{}/tree/main?recursive=true", repo_id);
@@ -31,18 +32,8 @@ impl HuggingFaceHub {
         
         let mut variants = Vec::new();
         for item in &items {
-            if item.path.ends_with(".gguf") || item.path.ends_with(".onnx") || item.path.ends_with(".safetensors") || item.path.ends_with(".bin") || item.path.ends_with(".pt") || item.path.ends_with(".awq") {
-                let mut total_size = item.size.unwrap_or(0);
-                
-                // If it's an ONNX file, check if there's a corresponding _data file and add its size
-                if item.path.ends_with(".onnx") {
-                    let data_path = format!("{}_data", item.path);
-                    if let Some(data_item) = items.iter().find(|i| i.path == data_path) {
-                        total_size += data_item.size.unwrap_or(0);
-                    }
-                }
-                
-                let size_gb = total_size as f64 / (1024.0 * 1024.0 * 1024.0);
+            if item.path.to_ascii_lowercase().ends_with(".gguf") {
+                let size_gb = item.size.unwrap_or(0) as f64 / (1024.0 * 1024.0 * 1024.0);
                 variants.push(HfVariant {
                     filename: item.path.clone(),
                     size_gb,
@@ -50,14 +41,23 @@ impl HuggingFaceHub {
             }
         }
 
+        variants.sort_by(|a, b| a.filename.cmp(&b.filename));
+
         if variants.is_empty() {
-            return Err(format!("No supported model files (.gguf, .onnx, .safetensors, etc.) found in repository '{}'.", repo_id));
+            return Err(format!(
+                "No GGUF files found in repository '{}'. This runtime cannot load safetensors, PyTorch shards, or other non-GGUF weights through the GGUF model flow.",
+                repo_id
+            ));
         }
 
         Ok(variants)
     }
 
     pub async fn build_manifest(repo_id: &str, filename: &str, download_size_gb: f64) -> Result<ModelManifest, String> {
+        if !filename.to_ascii_lowercase().ends_with(".gguf") {
+            return Err(format!("Unsupported model file '{}': the selected runtime requires a .gguf file.", filename));
+        }
+
         let url = format!("https://huggingface.co/{}/resolve/main/{}", repo_id, filename);
         
         // Base Engine + Weights overhead (~0.5 GB). KV Cache will dynamically add more.
@@ -156,7 +156,6 @@ impl HuggingFaceHub {
             }
         }
 
-        
         let category = if is_embedding {
             "embedding".to_string()
         } else if is_image_gen {
