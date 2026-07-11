@@ -3,10 +3,10 @@ name = "cmd"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-default-run = "cluaiz"
+default-run = "bitshit"
 
 [[bin]]
-name = "cluaiz"
+name = "bitshit"
 path = "src/main.rs"
 
 [dependencies]
@@ -16,7 +16,6 @@ cluaiz_shared = { package = "cluaiz-shared", path = "../inference-engine/engines
 neural-core = { path = "../interface-engines/neural_core" }
 cluaiz_onnx = { package = "onnx", path = "../interface-engines/onnx" }
 cluaiz_api = { path = "../inference-engine/api" }
-
 
 # ── Powerhouse Ratatui Framework ──
 ratatui = "0.30.0"
