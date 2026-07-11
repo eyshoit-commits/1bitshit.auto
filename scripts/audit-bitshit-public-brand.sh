@@ -22,6 +22,10 @@ public_checks=(
   'cmd/src/main.rs:std::env::set_var\("cluaiz_HOME"'
   'cmd/src/main.rs:Open the cluaiz Main Menu'
   'cmd/src/main.rs:Setup Cluaiz Node Profile'
+  'cmd/src/core/bootstrapper.rs:raw\.githubusercontent\.com/cluaiz/cluaiz'
+  'cmd/src/core/bootstrapper.rs:cluaiz-Bootstrapper/'
+  'cmd/src/core/bootstrapper.rs:\[cluaiz\]'
+  'cmd/src/core/bootstrapper.rs:\[Cluaiz\]'
   'package.json:github\.com/cluaiz/cluaiz'
   'package.json:raw\.githubusercontent\.com/cluaiz/'
   'package.json:"name": "cluaiz-package-manager"'
@@ -48,6 +52,9 @@ required_public_identity=(
   'cmd/src/main.rs:bitshit-core\.log'
   'cmd/src/main.rs:std::env::var\("BITSHIT_PORT"\)'
   'cmd/src/main.rs:std::env::set_var\("BITSHIT_HOME"'
+  'cmd/src/core/bootstrapper.rs:raw\.githubusercontent\.com/eyshoit-commits/bitshit\.cpu/main/package\.json'
+  'cmd/src/core/bootstrapper.rs:bitshit-bootstrapper/'
+  'cmd/src/core/bootstrapper.rs:\[BitShit\]'
   'package.json:"name": "bitshit-package-manager"'
   'package.json:"author": "BitShit"'
   'package.json:eyshoit-commits/bitshit\.cpu'
@@ -78,9 +85,14 @@ if grep -q 'cluaiz_HOME\|CLUAIZ_HOME' cmd/src/main.rs && ! grep -q 'BITSHIT_HOME
   fail=1
 fi
 
-python3 -m py_compile scripts/rebrand-main-cli.py
+python3 -m py_compile scripts/rebrand-main-cli.py scripts/rebrand-bootstrapper.py
 if ! python3 scripts/rebrand-main-cli.py --check; then
   printf '[PUBLIC-BRAND-FAIL] deterministic CLI transformer reports an incomplete migration\n' >&2
+  fail=1
+fi
+
+if ! python3 scripts/rebrand-bootstrapper.py --check; then
+  printf '[PUBLIC-BRAND-FAIL] deterministic bootstrapper transformer reports an incomplete migration\n' >&2
   fail=1
 fi
 
