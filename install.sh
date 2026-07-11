@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 PRODUCT="bitshit"
-REPO="https://github.com/eyshoit-commits/bitshit.cpu.git"
+REPO="https://github.com/eyshoit-commits/1bitshit.auto.git"
 INSTALL_DIR="${BITSHIT_INSTALL_DIR:-$HOME/.local/bin}"
 DATA_DIR="${BITSHIT_HOME:-$HOME/.bitshit}"
 LEGACY_DATA_DIR="${CLUAIZ_HOME:-$HOME/.cluaiz}"
@@ -30,6 +30,14 @@ Environment:
   BITSHIT_PROFILE      Cargo profile (default: release)
   CLUAIZ_HOME          Legacy data source for one-time migration (default: ~/.cluaiz)
 EOF
+}
+
+profile_target_dir() {
+  case "$1" in
+    dev) echo debug ;;
+    release) echo release ;;
+    *) echo "$1" ;;
+  esac
 }
 
 BACKEND=""
@@ -185,7 +193,8 @@ log "Building backend=$BACKEND profile=$PROFILE"
   fi
 )
 
-BUILT="$SOURCE_DIR/target/$PROFILE/$TARGET_BIN"
+TARGET_PROFILE_DIR="$(profile_target_dir "$PROFILE")"
+BUILT="$SOURCE_DIR/target/$TARGET_PROFILE_DIR/$TARGET_BIN"
 [[ -x "$BUILT" ]] || die "Build completed without producing $BUILT"
 install -m 0755 "$BUILT" "$INSTALL_DIR/$TARGET_BIN"
 
