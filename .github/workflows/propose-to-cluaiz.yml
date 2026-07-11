@@ -33,6 +33,9 @@ jobs:
       UPSTREAM_BASE: ${{ inputs.upstream_base }}
       FORK_REPO: ${{ vars.CLUAIZ_FORK_REPO }}
       GH_TOKEN: ${{ secrets.CLUAIZ_UPSTREAM_TOKEN }}
+      INPUT_COMMITS: ${{ inputs.commits }}
+      PR_TITLE: ${{ inputs.title }}
+      PR_BODY: ${{ inputs.body }}
     steps:
       - name: Validate adapter configuration
         shell: bash
@@ -40,6 +43,7 @@ jobs:
           set -euo pipefail
           [[ -n "$FORK_REPO" ]] || { echo 'Repository variable CLUAIZ_FORK_REPO is required, for example eyshoit-commits/cluaiz.' >&2; exit 2; }
           [[ -n "$GH_TOKEN" ]] || { echo 'Repository secret CLUAIZ_UPSTREAM_TOKEN is required.' >&2; exit 2; }
+          [[ "$FORK_REPO" == */* ]] || { echo 'CLUAIZ_FORK_REPO must be owner/repository.' >&2; exit 2; }
 
       - name: Checkout 1BitShit history
         uses: actions/checkout@v4
@@ -56,14 +60,18 @@ jobs:
           git remote add cluaiz "$UPSTREAM_REPO"
           git fetch --prune cluaiz "+refs/heads/${UPSTREAM_BASE}:refs/remotes/cluaiz/${UPSTREAM_BASE}"
 
+          # Preserve the adapter policy before switching to the clean upstream tree.
+          git show origin/main:.github/upstream-sync/owned-paths.txt > "$RUNNER_TEMP/owned-paths.txt"
+
           branch="1bitshit/proposal-$(date -u +%Y%m%d-%H%M%S)"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           git switch --detach "cluaiz/${UPSTREAM_BASE}"
           git switch -c "$branch"
 
-          read -r -a commits <<< "${{ inputs.commits }}"
+          read -r -a commits <<< "$INPUT_COMMITS"
           [[ ${#commits[@]} -gt 0 ]] || { echo 'No commits supplied.' >&2; exit 2; }
           for commit in "${commits[@]}"; do
+            [[ "$commit" =~ ^[0-9a-fA-F]{7,40}$ ]] || { echo "Invalid commit SHA: $commit" >&2; exit 2; }
             git cat-file -e "${commit}^{commit}"
             git cherry-pick -x "$commit"
           done
@@ -85,7 +93,7 @@ jobs:
               fi
               echo "Blocked BitShit-owned path in upstream proposal: $path" >&2
               blocked=1
-            done < .github/upstream-sync/owned-paths.txt
+            done < "$RUNNER_TEMP/owned-paths.txt"
           done <<< "$changed"
           [[ $blocked -eq 0 ]]
 
@@ -108,13 +116,13 @@ jobs:
         run: |
           set -euo pipefail
           fork_owner="${FORK_REPO%%/*}"
+          body_file="$RUNNER_TEMP/upstream-pr-body.md"
+          printf '%s\n\nProposed from 1BitShit commits: `%s`. Each commit was replayed with `cherry-pick -x` on the current Cluaiz base and BitShit-owned paths were rejected by the adapter.\n' "$PR_BODY" "$INPUT_COMMITS" > "$body_file"
           response="$(gh api --method POST \
             -H 'Accept: application/vnd.github+json' \
             /repos/cluaiz/cluaiz/pulls \
-            -f title='${{ inputs.title }}' \
+            -f title="$PR_TITLE" \
             -f head="${fork_owner}:${{ steps.branch.outputs.branch }}" \
-            -f base="${UPSTREAM_BASE}" \
-            -f body='${{ inputs.body }}
-
-Proposed from 1BitShit commits: `${{ inputs.commits }}`. Each commit was replayed with `cherry-pick -x` on the current Cluaiz base and BitShit-owned paths were rejected by the adapter.')"
+            -f base="$UPSTREAM_BASE" \
+            -F body=@"$body_file")"
           echo "$response" | jq -r '.html_url'
