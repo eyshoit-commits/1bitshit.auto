@@ -6,34 +6,29 @@
 
 ## Supported platforms
 
-| Platform | CPU | NVIDIA CUDA | AMD ROCm | Apple Metal |
-|---|:---:|:---:|:---:|:---:|
-| Linux x86_64 | Yes | Yes | Yes | No |
-| Linux arm64 | Yes | Platform-dependent | Platform-dependent | No |
-| Windows x86_64 | Yes | Yes | Not yet in the unified installer | No |
-| macOS arm64/x86_64 | Yes | No | No | Yes |
+| Platform | CPU | NVIDIA CUDA | AMD ROCm |
+|---|:---:|:---:|:---:|
+| Linux x86_64 | Yes | Yes | Yes |
+| Linux arm64 | Yes | Platform-dependent | Platform-dependent |
+| Windows x86_64 | Yes | Yes | Not yet in the unified installer |
 
-Backend support depends on the corresponding vendor toolchain and driver being installed before compilation.
+The unified installer currently supports Linux and Windows. Backend support depends on the corresponding vendor toolchain and driver being installed before compilation.
 
 ## Requirements
 
-The unified installers build BitShit from source. Install these tools first:
+The unified installers build BitShit from source.
 
-- Git
-- Rust and Cargo
-- CMake
-- a C/C++ build toolchain
-- backend SDK when using CUDA, ROCm or Metal
+Linux requires Git, Rust/Cargo, CMake, Make, Python 3 and a C/C++ compiler. The installer can install the missing base toolchain through `apt`, `dnf`, `pacman` or `apk`.
 
-Linux additionally requires `make`. Windows requires Visual Studio Build Tools with the Desktop development with C++ workload.
+Windows uses an MSYS2 UCRT64 toolchain and installs the required packages automatically. CUDA additionally requires a working NVIDIA driver and CUDA toolkit.
 
 ## Installation
 
-### Linux and macOS
+### Linux
 
 ```bash
-git clone https://github.com/eyshoit-commits/bitshit.cpu.git
-cd bitshit.cpu
+git clone https://github.com/eyshoit-commits/1bitshit.auto.git
+cd 1bitshit.auto
 ./install.sh
 ```
 
@@ -44,14 +39,19 @@ Non-interactive examples:
 ./install.sh --backend cpu --yes
 ./install.sh --backend cuda --yes
 ./install.sh --backend rocm --yes
-./install.sh --backend metal --yes
+```
+
+Install without starting the resulting binary afterwards:
+
+```bash
+./install.sh --yes --no-launch
 ```
 
 ### Windows PowerShell
 
 ```powershell
-git clone https://github.com/eyshoit-commits/bitshit.cpu.git
-Set-Location bitshit.cpu
+git clone https://github.com/eyshoit-commits/1bitshit.auto.git
+Set-Location 1bitshit.auto
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
@@ -61,6 +61,13 @@ Non-interactive examples:
 .\install.ps1 -Backend Auto -Yes
 .\install.ps1 -Backend Cpu -Yes
 .\install.ps1 -Backend Cuda -Yes
+.\install.ps1 -Backend Auto -Yes -NoLaunch
+```
+
+GNU-style arguments are accepted by `install.ps1` as well:
+
+```powershell
+.\install.ps1 --backend cpu --yes --no-launch
 ```
 
 ### Windows updates
@@ -84,17 +91,29 @@ cmd.exe /c update.cmd cuda
 The installers:
 
 1. detect or validate the selected hardware backend;
-2. clone or update the source checkout;
-3. initialize all Git submodules;
-4. compile the `bitshit` Cargo binary with `--locked`;
-5. install the executable into the user binary directory;
-6. create `~/.bitshit/install.json` or its Windows equivalent;
-7. optionally create a temporary `cluaiz` command alias for compatibility.
+2. migrate missing data from previous runtime directories without overwriting canonical files;
+3. clone or update the source checkout;
+4. initialize all Git submodules;
+5. apply the public BitShit branding and model-path compatibility migrations;
+6. compile the `bitshit` Cargo binary with `--locked`;
+7. synchronize runtime engine and kernel artifacts;
+8. install the executable into the user binary directory;
+9. create `~/.bitshit/install.json` or its Windows equivalent;
+10. optionally create a temporary `cluaiz` command alias for compatibility;
+11. run `bitshit --version` unless `--no-launch` or `-NoLaunch` was supplied.
 
-Default locations on Linux and macOS:
+Default locations on Linux:
 
 ```text
 Binary:       ~/.local/bin/bitshit
+Runtime data: ~/.bitshit
+Source:       ~/.bitshit/source
+```
+
+Default locations on Windows:
+
+```text
+Binary:       ~/.bitshit/bin/bitshit.exe
 Runtime data: ~/.bitshit
 Source:       ~/.bitshit/source
 ```
@@ -104,13 +123,27 @@ Environment overrides:
 ```text
 BITSHIT_INSTALL_DIR
 BITSHIT_HOME
+BITSHIT_INTERIM_HOME
 BITSHIT_SOURCE_DIR
 BITSHIT_PROFILE
+CLUAIZ_LEGACY_HOME
 ```
 
 ## Data migration
 
-Existing data under `~/.cluaiz` is copied once into `~/.bitshit` when the new directory is empty. The old directory is preserved. A migration marker prevents repeated imports.
+Migration is non-destructive and follows this order:
+
+1. `~/.1bitshit` is copied first into `~/.bitshit`;
+2. `~/.cluaiz` then fills only still-missing files;
+3. existing files under `~/.bitshit` always win;
+4. neither historical directory is deleted.
+
+Each source receives its own marker:
+
+```text
+~/.bitshit/.migrated-from-1bitshit
+~/.bitshit/.migrated-from-cluaiz
+```
 
 Disable automatic migration with:
 
@@ -122,9 +155,9 @@ Disable automatic migration with:
 .\install.ps1 -NoMigrate
 ```
 
-The complete migration, environment precedence and internal compatibility rules are defined in [docs/BITSHIT_MIGRATION.md](docs/BITSHIT_MIGRATION.md).
+The detailed migration contract is documented in [docs/PATH_MIGRATION.md](docs/PATH_MIGRATION.md).
 
-Internal crates and FFI symbols may temporarily retain legacy `cluaiz` names while compatibility-safe migration is completed. Those names are implementation details, not the public product identity.
+Internal crates, native artifacts and FFI symbols may temporarily retain legacy `cluaiz` names while compatibility-safe migration is completed. Those names are implementation details, not the public product identity. They are not removed merely to make a grep result prettier.
 
 ## Usage
 
@@ -153,13 +186,13 @@ BitShit currently combines:
 - local document ingestion and vector search;
 - an Axum/Tokio API gateway.
 
-Several directories and crate names still reflect the inherited codebase. Renaming them is being performed in controlled stages because blind replacement would break Cargo package references, native linkage, cache discovery and existing installations.
+Several directories and crate names still reflect the inherited codebase. Renaming them is performed in controlled stages because blind replacement would break Cargo package references, native linkage, cache discovery and existing installations.
 
 ## Development
 
 ```bash
-git clone --recurse-submodules https://github.com/eyshoit-commits/bitshit.cpu.git
-cd bitshit.cpu
+git clone --recurse-submodules https://github.com/eyshoit-commits/1bitshit.auto.git
+cd 1bitshit.auto
 cargo build --locked -p cmd --bin bitshit
 ```
 
@@ -170,17 +203,19 @@ GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF \
   cargo build --locked -p cmd --bin bitshit
 ```
 
-Run the repository rebranding checks:
+Run the repository checks:
 
 ```bash
+python3 tests/installer_contract.py
 bash scripts/verify-bitshit-rebrand.sh
 ```
 
 ## Security and compatibility
 
 - Runtime data remains local unless a configured component explicitly performs network access.
-- Existing `.cluaiz` data is never deleted by the migration installer.
+- Existing `.1bitshit` and `.cluaiz` data is never deleted by the migration installer.
 - The legacy command alias can be disabled with `--no-legacy-alias` or `-NoLegacyAlias`.
+- The post-install version invocation can be disabled with `--no-launch` or `-NoLaunch`.
 - Alpha builds may change configuration formats before a stable release.
 
 ## License
