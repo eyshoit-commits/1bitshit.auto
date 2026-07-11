@@ -8,7 +8,9 @@ members = [
     "test/dummy_plugin",
     "inference-cel",
     "test/extension_testing",
-    "test/engine_cel_test",
+    "test/engine_cel_test"
+]
+exclude = [
     "test/ai_search_e2e_test",
     "test/comprehensive_e2e_trace"
 ]
