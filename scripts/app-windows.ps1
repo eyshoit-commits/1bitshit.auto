@@ -15,19 +15,33 @@ $SourceDir = if ($env:BITSHIT_SOURCE_DIR) { $env:BITSHIT_SOURCE_DIR } else { Joi
 $BinDir = if ($env:BITSHIT_INSTALL_DIR) { $env:BITSHIT_INSTALL_DIR } else { Join-Path $HomeDir 'bin' }
 $Profile = if ($env:BITSHIT_PROFILE) { $env:BITSHIT_PROFILE } else { 'release' }
 $TargetProfileDir = if ($Profile -eq 'dev') { 'debug' } else { $Profile }
+$RustTarget = 'x86_64-pc-windows-gnu'
+$MsysRoot = if ($env:BITSHIT_MSYS2_ROOT) { $env:BITSHIT_MSYS2_ROOT } else { 'C:\msys64' }
+$UcrtBin = Join-Path $MsysRoot 'ucrt64\bin'
 
 function Step([string]$Message) { Write-Host "[bitshit] $Message" }
 function Fail([string]$Message) { throw "[bitshit] $Message" }
 function Need([string]$Command) { if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) { Fail "Missing required command: $Command" } }
-function Has-Cuda { return [bool](Get-Command nvcc -ErrorAction SilentlyContinue) -and [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue) }
+function Has-Cuda { return [bool](Get-Command nvcc.exe -ErrorAction SilentlyContinue) -and [bool](Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue) }
+
+$MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
+$UserPath = [Environment]::GetEnvironmentVariable('Path','User')
+$env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
 
 Need git
 Need cargo
 Need rustc
-Need cmake
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue) -and -not (Get-Command clang-cl.exe -ErrorAction SilentlyContinue)) {
-    Fail 'Missing Windows C++ compiler. Run setup through install.sh from Git Bash or install Visual Studio Build Tools with Desktop development with C++.'
-}
+Need cmake.exe
+Need ninja.exe
+Need gcc.exe
+Need g++.exe
+
+$env:CC = Join-Path $UcrtBin 'gcc.exe'
+$env:CXX = Join-Path $UcrtBin 'g++.exe'
+$env:AR = Join-Path $UcrtBin 'ar.exe'
+$env:CMAKE_GENERATOR = 'Ninja'
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = Join-Path $UcrtBin 'gcc.exe'
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_AR = Join-Path $UcrtBin 'ar.exe'
 
 $HasCuda = Has-Cuda
 if ($Backend -eq 'auto') { $Backend = if ($HasCuda) { 'cuda' } else { 'cpu' } }
@@ -63,19 +77,19 @@ $env:GGML_METAL = 'OFF'
 Remove-Item Env:CARGO_FEATURE_CUDA -ErrorAction SilentlyContinue
 if ($Backend -eq 'cuda') { $env:CARGO_FEATURE_CUDA = '1' }
 
-Step "Building backend=$Backend profile=$Profile"
+Step "Building backend=$Backend profile=$Profile target=$RustTarget"
 Push-Location $SourceDir
 try {
     if (-not (Test-Path 'Cargo.lock')) { cargo generate-lockfile }
-    cargo build --locked --profile $Profile -p cmd --bin bitshit
+    cargo build --locked --target $RustTarget --profile $Profile -p cmd --bin bitshit
     if ($LASTEXITCODE -ne 0) { Fail "Cargo build failed with exit code $LASTEXITCODE." }
 } finally { Pop-Location }
 
-$Built = Join-Path $SourceDir "target\$TargetProfileDir\bitshit.exe"
+$Built = Join-Path $SourceDir "target\$RustTarget\$TargetProfileDir\bitshit.exe"
 if (-not (Test-Path $Built)) { Fail "Build completed without producing $Built" }
 $Target = Join-Path $BinDir 'bitshit.exe'
 Copy-Item -Force $Built $Target
 if (-not $NoLegacyAlias) { Copy-Item -Force $Built (Join-Path $BinDir 'cluaiz.exe') }
-@{ product='bitshit'; platform='windows'; backend=$Backend; profile=$Profile; binary=$Target; source=$SourceDir } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
+@{ product='bitshit'; platform='windows'; toolchain='msys2-ucrt64'; rust_target=$RustTarget; backend=$Backend; profile=$Profile; binary=$Target; source=$SourceDir } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
 Step "Installed $Target"
 & $Target --version
