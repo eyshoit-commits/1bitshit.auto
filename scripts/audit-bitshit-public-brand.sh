@@ -22,6 +22,10 @@ public_checks=(
   'cmd/src/main.rs:std::env::set_var\("cluaiz_HOME"'
   'cmd/src/main.rs:Open the cluaiz Main Menu'
   'cmd/src/main.rs:Setup Cluaiz Node Profile'
+  'package.json:github\.com/cluaiz/cluaiz'
+  'package.json:raw\.githubusercontent\.com/cluaiz/'
+  'package.json:"name": "cluaiz-package-manager"'
+  'package.json:"author": "cluaiz"'
 )
 
 for entry in "${public_checks[@]}"; do
@@ -44,6 +48,13 @@ required_public_identity=(
   'cmd/src/main.rs:bitshit-core\.log'
   'cmd/src/main.rs:std::env::var\("BITSHIT_PORT"\)'
   'cmd/src/main.rs:std::env::set_var\("BITSHIT_HOME"'
+  'package.json:"name": "bitshit-package-manager"'
+  'package.json:"author": "BitShit"'
+  'package.json:eyshoit-commits/bitshit\.cpu'
+  'package.json:bitshit-cli\.json'
+  'package.json:bitshit-engine\.json'
+  'package.json:bitshit-kernel\.json'
+  'package.json:bitshit-driver\.json'
 )
 
 for entry in "${required_public_identity[@]}"; do
