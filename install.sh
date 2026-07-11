@@ -5,10 +5,12 @@ PRODUCT="bitshit"
 REPO="https://github.com/eyshoit-commits/bitshit.cpu.git"
 INSTALL_DIR="${BITSHIT_INSTALL_DIR:-$HOME/.local/bin}"
 DATA_DIR="${BITSHIT_HOME:-$HOME/.bitshit}"
+LEGACY_DATA_DIR="${CLUAIZ_HOME:-$HOME/.cluaiz}"
 SOURCE_DIR="${BITSHIT_SOURCE_DIR:-$DATA_DIR/source}"
 PROFILE="${BITSHIT_PROFILE:-release}"
 TARGET_BIN="bitshit"
 LEGACY_BIN="cluaiz"
+MIGRATION_MARKER="$DATA_DIR/.migrated-from-cluaiz"
 
 log() { printf '\033[1;36m[bitshit]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[bitshit]\033[0m %s\n' "$*" >&2; }
@@ -19,24 +21,27 @@ usage() {
   cat <<'EOF'
 BitShit unified installer
 
-Usage: ./install.sh [--backend auto|cpu|cuda|rocm|metal] [--yes] [--no-legacy-alias]
+Usage: ./install.sh [--backend auto|cpu|cuda|rocm|metal] [--yes] [--no-legacy-alias] [--no-migrate]
 
 Environment:
   BITSHIT_INSTALL_DIR  Binary destination (default: ~/.local/bin)
   BITSHIT_HOME         Runtime data directory (default: ~/.bitshit)
   BITSHIT_SOURCE_DIR   Source checkout (default: ~/.bitshit/source)
   BITSHIT_PROFILE      Cargo profile (default: release)
+  CLUAIZ_HOME          Legacy data source for one-time migration (default: ~/.cluaiz)
 EOF
 }
 
 BACKEND=""
 ASSUME_YES=0
 LEGACY_ALIAS=1
+MIGRATE_LEGACY=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --backend) BACKEND="${2:-}"; shift 2 ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --no-legacy-alias) LEGACY_ALIAS=0; shift ;;
+    --no-migrate) MIGRATE_LEGACY=0; shift ;;
     --help|-h) usage; exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
@@ -60,6 +65,31 @@ auto_backend() {
   elif has_metal; then echo metal
   else echo cpu
   fi
+}
+
+migrate_legacy_data() {
+  [[ $MIGRATE_LEGACY -eq 1 ]] || return 0
+  [[ "$LEGACY_DATA_DIR" != "$DATA_DIR" ]] || return 0
+  [[ -d "$LEGACY_DATA_DIR" ]] || return 0
+  [[ ! -e "$MIGRATION_MARKER" ]] || return 0
+
+  log "Migrating legacy data from $LEGACY_DATA_DIR"
+  mkdir -p "$DATA_DIR"
+
+  # Merge without deleting or modifying the legacy tree. Existing BitShit files win.
+  while IFS= read -r -d '' entry; do
+    relative="${entry#"$LEGACY_DATA_DIR"/}"
+    target="$DATA_DIR/$relative"
+    if [[ -d "$entry" ]]; then
+      mkdir -p "$target"
+    elif [[ ! -e "$target" ]]; then
+      mkdir -p "$(dirname "$target")"
+      cp -p "$entry" "$target"
+    fi
+  done < <(find "$LEGACY_DATA_DIR" -mindepth 1 -print0)
+
+  printf 'source=%s\nmigrated_at=%s\n' "$LEGACY_DATA_DIR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MIGRATION_MARKER"
+  log "Legacy data copied; original remains untouched"
 }
 
 if [[ -z "$BACKEND" ]]; then
@@ -89,6 +119,7 @@ case "$BACKEND" in
   metal) has_metal || die "Metal selected but this is not a configured macOS/Xcode system." ;;
 esac
 
+migrate_legacy_data
 mkdir -p "$DATA_DIR" "$INSTALL_DIR"
 if [[ -d "$SOURCE_DIR/.git" ]]; then
   log "Updating source checkout"
@@ -132,7 +163,8 @@ cat > "$DATA_DIR/install.json" <<EOF
   "backend": "$BACKEND",
   "profile": "$PROFILE",
   "binary": "$INSTALL_DIR/$TARGET_BIN",
-  "source": "$SOURCE_DIR"
+  "source": "$SOURCE_DIR",
+  "legacy_data_source": "$LEGACY_DATA_DIR"
 }
 EOF
 
