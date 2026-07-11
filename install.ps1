@@ -13,6 +13,7 @@ $Backend = 'auto'
 $Yes = $false
 $NoLegacyAlias = $false
 $NoMigrate = $false
+$NoLaunch = $false
 
 for ($i = 0; $i -lt $args.Count; $i++) {
     $arg = [string]$args[$i]
@@ -39,6 +40,10 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         }
         '^(?i)--?no-migrate$' {
             $NoMigrate = $true
+            continue
+        }
+        '^(?i)--?no-launch$' {
+            $NoLaunch = $true
             continue
         }
         '^(?i)(auto|cpu|cuda)$' {
@@ -68,6 +73,7 @@ $Forward = @{
 if ($Yes) { $Forward.Yes = $true }
 if ($NoLegacyAlias) { $Forward.NoLegacyAlias = $true }
 if ($NoMigrate) { $Forward.NoMigrate = $true }
+if ($NoLaunch) { $Forward.NoLaunch = $true }
 
 & $Setup @Forward
 if ($LASTEXITCODE -ne 0) {
