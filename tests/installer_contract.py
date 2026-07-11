@@ -22,6 +22,15 @@ def forbid(text: str, needle: str, path: str) -> None:
         raise AssertionError(f"{path}: forbidden fragment returned: {needle!r}")
 
 
+def assert_order(text: str, fragments: tuple[str, ...], path: str) -> None:
+    positions = []
+    for fragment in fragments:
+        require(text, fragment, path)
+        positions.append(text.index(fragment))
+    if positions != sorted(positions):
+        raise AssertionError(f"{path}: migration pipeline order is inconsistent")
+
+
 def main() -> int:
     launcher = read("install.sh")
     windows_launcher = read("install.ps1")
@@ -32,6 +41,7 @@ def main() -> int:
     linux_update = read("update.sh")
     windows_update = read("update.ps1")
     cmd_update = read("update.cmd")
+    build_rs = read("cmd/build.rs")
     docs = read("docs/PATH_MIGRATION.md")
     readme = read("README.md")
 
@@ -72,6 +82,8 @@ def main() -> int:
         '"migration_mode":"copy-missing"',
         "--no-launch",
         '[[ $LAUNCH_AFTER_INSTALL -eq 1 ]]',
+        'SOURCE_MIGRATIONS=(',
+        'for migration in "${SOURCE_MIGRATIONS[@]}"',
     ):
         require(linux, fragment, "scripts/app-linux.sh")
 
@@ -85,8 +97,25 @@ def main() -> int:
         "$env:CLUAIZ_HOME = $HomeDir",
         "[switch]$NoLaunch",
         "if (-not $NoLaunch)",
+        '$SourceMigrations = @(',
+        'foreach ($Migration in $SourceMigrations)',
     ):
         require(windows, fragment, "scripts/app-windows.ps1")
+
+    source_migrations = (
+        "repair-openmp-duplicates.py",
+        "rebrand-main-cli.py",
+        "fix-public-branding.py",
+        "fix-model-runtime.py",
+        "fix-registry-cache.py",
+        "fix-model-hub-load.py",
+    )
+    for path, text in (
+        ("scripts/app-linux.sh", linux),
+        ("scripts/app-windows.ps1", windows),
+        ("cmd/build.rs", build_rs),
+    ):
+        assert_order(text, source_migrations, path)
 
     for fragment in (
         "--backend=*)",
