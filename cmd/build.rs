@@ -43,6 +43,9 @@ fn main() {
         .parent()
         .expect("cmd must be inside the repository root");
 
+    // Repair source damage left by older non-idempotent migrations before applying
+    // the current migrations. This makes existing working copies recover automatically.
+    run_source_migration(repo_root, "repair-openmp-duplicates.py");
     run_source_migration(repo_root, "rebrand-main-cli.py");
     run_source_migration(repo_root, "fix-model-runtime.py");
     run_source_migration(repo_root, "fix-registry-cache.py");
