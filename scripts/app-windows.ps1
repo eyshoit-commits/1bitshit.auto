@@ -3,7 +3,8 @@ param(
     [string]$Backend = 'auto',
     [switch]$Yes,
     [switch]$NoLegacyAlias,
-    [switch]$NoMigrate
+    [switch]$NoMigrate,
+    [switch]$NoLaunch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -174,4 +175,6 @@ if (-not $NoLegacyAlias) { Copy-Item -Force $Built (Join-Path $BinDir 'cluaiz.ex
 Step "Installed $Target"
 Step "Runtime synchronized to $HomeDir"
 Step "Models stored in $env:BITSHIT_MODELS_DIR"
-& $Target --version
+if (-not $NoLaunch) {
+    & $Target --version
+}
