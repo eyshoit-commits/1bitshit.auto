@@ -132,13 +132,24 @@ $env:GGML_METAL = 'OFF'
 Remove-Item Env:CARGO_FEATURE_CUDA -ErrorAction SilentlyContinue
 if ($Backend -eq 'cuda') { $env:CARGO_FEATURE_CUDA = '1' }
 
-Step 'Applying public runtime and model-path migrations'
+$SourceMigrations = @(
+    'repair-openmp-duplicates.py',
+    'rebrand-main-cli.py',
+    'fix-public-branding.py',
+    'fix-model-runtime.py',
+    'fix-registry-cache.py',
+    'fix-model-hub-load.py'
+)
+
+Step 'Applying complete BitShit source migration pipeline'
 Push-Location $SourceDir
 try {
-    & $Python scripts/rebrand-main-cli.py
-    if ($LASTEXITCODE -ne 0) { Fail "Runtime migration failed with exit code $LASTEXITCODE." }
-    & $Python scripts/fix-model-runtime.py
-    if ($LASTEXITCODE -ne 0) { Fail "Model runtime migration failed with exit code $LASTEXITCODE." }
+    foreach ($Migration in $SourceMigrations) {
+        $MigrationPath = Join-Path 'scripts' $Migration
+        if (-not (Test-Path $MigrationPath)) { Fail "Missing source migration: $MigrationPath" }
+        & $Python $MigrationPath
+        if ($LASTEXITCODE -ne 0) { Fail "$MigrationPath failed with exit code $LASTEXITCODE." }
+    }
 } finally { Pop-Location }
 
 Step "Building backend=$Backend profile=$Profile target=$RustTarget"
