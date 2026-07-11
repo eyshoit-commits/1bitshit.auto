@@ -95,6 +95,39 @@ function Resolve-CudaToolkit {
     return $null
 }
 
+function Install-CudaToolkit {
+    if (-not (Has 'winget.exe')) {
+        Fail 'CUDA Toolkit fehlt und winget ist nicht verfügbar. Installiere App Installer aus dem Microsoft Store oder das NVIDIA CUDA Toolkit manuell.'
+    }
+
+    $Install = $Yes
+    if (-not $Yes) {
+        $Answer = Read-Host 'CUDA Toolkit fehlt. Jetzt automatisch mit winget installieren? [J/n]'
+        $Install = [string]::IsNullOrWhiteSpace($Answer) -or $Answer -match '^(?i:j|ja|y|yes)$'
+    }
+
+    if (-not $Install) {
+        Fail 'CUDA Toolkit wurde nicht installiert. Starte den Installer erneut oder verwende --backend cpu.'
+    }
+
+    Step 'Installiere NVIDIA CUDA Toolkit über winget. Das kann einige Minuten dauern.'
+    & winget.exe install --id Nvidia.CUDA --exact --source winget --accept-package-agreements --accept-source-agreements --silent
+    if ($LASTEXITCODE -ne 0) {
+        Fail "winget konnte das NVIDIA CUDA Toolkit nicht installieren (Exitcode $LASTEXITCODE)."
+    }
+
+    $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
+    $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
+    $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
+
+    $Cuda = Resolve-CudaToolkit
+    if (-not $Cuda) {
+        Fail 'CUDA Toolkit wurde installiert, aber nvcc.exe ist noch nicht sichtbar. Öffne ein neues PowerShell-Fenster und starte denselben Installationsbefehl erneut.'
+    }
+
+    return $Cuda
+}
+
 Install-Msys2
 
 Step 'Aktualisiere MSYS2 und installiere die vollständige UCRT64-Buildumgebung.'
@@ -120,11 +153,13 @@ foreach ($ToolPath in @(
 }
 
 if ($Backend -eq 'cuda') {
-    if (-not (Has 'nvidia-smi.exe')) { Fail 'CUDA wurde gewählt, aber der NVIDIA-Treiber fehlt.' }
+    if (-not (Has 'nvidia-smi.exe')) {
+        Fail 'CUDA wurde gewählt, aber der NVIDIA-Treiber fehlt. Installiere zuerst den aktuellen NVIDIA-Treiber oder verwende --backend cpu.'
+    }
 
     $Cuda = Resolve-CudaToolkit
     if (-not $Cuda) {
-        Fail 'CUDA wurde gewählt, aber kein CUDA Toolkit mit nvcc.exe wurde gefunden. Installiere das NVIDIA CUDA Toolkit. Der NVIDIA-Treiber allein reicht nicht.'
+        $Cuda = Install-CudaToolkit
     }
 
     $env:CUDA_PATH = $Cuda.Root
