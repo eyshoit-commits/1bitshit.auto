@@ -1,0 +1,139 @@
+name: Sync Cluaiz into 1BitShit
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Cluaiz ref to import
+        required: false
+        default: main
+      force_pr:
+        description: Open a PR even when the ref is already contained
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: sync-cluaiz-inbound
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPO: https://github.com/cluaiz/cluaiz.git
+      UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout 1BitShit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name '1bitshit-sync[bot]'
+          git config user.email '1bitshit-sync[bot]@users.noreply.github.com'
+          git remote add cluaiz "$UPSTREAM_REPO" 2>/dev/null || git remote set-url cluaiz "$UPSTREAM_REPO"
+          git fetch --prune cluaiz "+refs/heads/${UPSTREAM_REF}:refs/remotes/cluaiz/${UPSTREAM_REF}"
+
+      - name: Detect upstream changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_sha="$(git rev-parse "cluaiz/${UPSTREAM_REF}")"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$upstream_sha" HEAD && [[ "${{ inputs.force_pr || false }}" != "true" ]]; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo "Cluaiz ${UPSTREAM_REF} is already contained in 1BitShit."
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream on adapter branch
+        if: steps.detect.outputs.changed == 'true'
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          branch="sync/cluaiz-${stamp}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git switch -c "$branch"
+
+          set +e
+          git merge --no-ff --no-commit "cluaiz/${UPSTREAM_REF}"
+          merge_rc=$?
+          set -e
+
+          # 1BitShit-owned paths always win during automatic imports.
+          while IFS= read -r path; do
+            [[ -z "$path" || "$path" == \#* ]] && continue
+            git checkout HEAD -- "$path" 2>/dev/null || true
+            git add -A -- "$path" 2>/dev/null || true
+          done < .github/upstream-sync/owned-paths.txt
+
+          unresolved="$(git diff --name-only --diff-filter=U)"
+          if [[ -n "$unresolved" ]]; then
+            printf 'Unresolved non-owned conflicts:\n%s\n' "$unresolved" >&2
+            exit 2
+          fi
+
+          if [[ $merge_rc -ne 0 ]]; then
+            echo 'Merge conflicts were limited to protected paths and were resolved in favor of 1BitShit.'
+          fi
+
+          mkdir -p .github/upstream-sync
+          cat > .github/upstream-sync/last-import.json <<JSON
+          {
+            "repository": "cluaiz/cluaiz",
+            "ref": "${UPSTREAM_REF}",
+            "commit": "${{ steps.detect.outputs.upstream_sha }}",
+            "imported_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+          git add -A
+          git commit -m "sync: import cluaiz/${UPSTREAM_REF} at ${{ steps.detect.outputs.upstream_sha }}"
+
+      - name: Validate imported tree
+        if: steps.detect.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          [[ ! -f scripts/verify-bitshit-rebrand.sh ]] || bash scripts/verify-bitshit-rebrand.sh
+          [[ ! -f scripts/audit-bitshit-public-brand.sh ]] || bash scripts/audit-bitshit-public-brand.sh
+          cargo metadata --no-deps --format-version 1 >/dev/null
+
+      - name: Push adapter branch
+        if: steps.detect.outputs.changed == 'true'
+        run: git push --set-upstream origin "${{ steps.merge.outputs.branch }}"
+
+      - name: Open gated import pull request
+        if: steps.detect.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="${{ steps.merge.outputs.branch }}"
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing" ]]; then
+            echo "PR #$existing already exists."
+            exit 0
+          fi
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head "$branch" \
+            --title "sync: review Cluaiz ${{ steps.detect.outputs.upstream_sha }}" \
+            --label 'upstream-sync' \
+            --body "Automated, gated import from \`cluaiz/cluaiz@${{ steps.detect.outputs.upstream_sha }}\`.
+
+BitShit-owned paths listed in \`.github/upstream-sync/owned-paths.txt\` were preserved. Validation completed before this PR was opened. Review functional changes before merging; upstream branding and installer files are intentionally not imported automatically."
