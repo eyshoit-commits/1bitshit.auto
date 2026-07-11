@@ -109,7 +109,9 @@ try {
 Step "Building backend=$Backend profile=$Profile target=$RustTarget"
 Push-Location $SourceDir
 try {
-    if (-not (Test-Path 'Cargo.lock')) { & $Cargo generate-lockfile }
+    Step 'Refreshing Cargo.lock for the current workspace'
+    & $Cargo generate-lockfile
+    if ($LASTEXITCODE -ne 0) { Fail "Cargo lockfile generation failed with exit code $LASTEXITCODE." }
     & $Cargo build --locked --target $RustTarget --profile $Profile -p cmd --bin bitshit
     if ($LASTEXITCODE -ne 0) { Fail "Cargo build failed with exit code $LASTEXITCODE." }
 } finally { Pop-Location }
