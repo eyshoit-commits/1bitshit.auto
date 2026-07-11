@@ -1,52 +1,52 @@
 {
-  "name": "cluaiz-package-manager",
+  "name": "bitshit-package-manager",
   "version": "0.1.3",
-  "id": "https://github.com/cluaiz/cluaiz/raw/main/package.json",
-  "last_updated": "2026-05-20T10:00:00Z",
-  "author": "cluaiz",
-  "cdn": "https://cdn.jsdelivr.net",
+  "id": "https://raw.githubusercontent.com/eyshoit-commits/bitshit.cpu/main/package.json",
+  "last_updated": "2026-07-11T07:38:00Z",
+  "author": "BitShit",
+  "repository": "https://github.com/eyshoit-commits/bitshit.cpu",
   "components": {
     "cli": {
-      "version": "dev-release",
+      "version": "source-build",
       "min_supported": null,
-      "manifest_url": "https://github.com/cluaiz/cluaiz/releases/download/cli-dev-release/cluaiz-cli.json"
+      "manifest_url": "https://github.com/eyshoit-commits/bitshit.cpu/releases/download/cli-source-build/bitshit-cli.json"
     },
     "engine": {
-      "version": "dev-release",
+      "version": "source-build",
       "min_supported": null,
-      "manifest_url": "https://github.com/cluaiz/cluaiz/releases/download/engine-dev-release/cluaiz-engine.json"
+      "manifest_url": "https://github.com/eyshoit-commits/bitshit.cpu/releases/download/engine-source-build/bitshit-engine.json"
     },
     "kernel": {
-      "version": "dev-release",
+      "version": "source-build",
       "min_supported": null,
-      "manifest_url": "https://github.com/cluaiz/cluaiz/releases/download/kernel-dev-release/cluaiz-kernel.json"
+      "manifest_url": "https://github.com/eyshoit-commits/bitshit.cpu/releases/download/kernel-source-build/bitshit-kernel.json"
     },
     "drivers": {
-      "version": "dev-release",
+      "version": "source-build",
       "min_supported": null,
-      "manifest_url": "https://github.com/cluaiz/cluaiz/releases/download/driver-dev-release/cluaiz-driver.json"
+      "manifest_url": "https://github.com/eyshoit-commits/bitshit.cpu/releases/download/driver-source-build/bitshit-driver.json"
     }
   },
   "web": {
     "ps1": {
       "version": "main",
-      "manifest_url": "https://github.com/cluaiz/cluaiz/blob/main/install.ps1"
+      "manifest_url": "https://raw.githubusercontent.com/eyshoit-commits/bitshit.cpu/main/install.ps1"
     },
     "sh": {
       "version": "main",
-      "manifest_url": "https://github.com/cluaiz/cluaiz/blob/main/install.sh"
+      "manifest_url": "https://raw.githubusercontent.com/eyshoit-commits/bitshit.cpu/main/install.sh"
     },
     "models": {
       "version": "main",
-      "manifest_url": "https://github.com/cluaiz/cluaiz/blob/main/models/library/registry.json"
+      "manifest_url": "https://raw.githubusercontent.com/eyshoit-commits/bitshit.cpu/main/models/library/registry.json"
     },
     "docs": {
       "version": "main",
-      "manifest_url": "https://github.com/cluaiz/cluaiz/blob/main/docs/registry.json"
+      "manifest_url": "https://raw.githubusercontent.com/eyshoit-commits/bitshit.cpu/main/docs/registry.json"
     },
     "hub": {
       "version": "main",
-      "manifest_url": "https://raw.githubusercontent.com/cluaiz/cluaiz-hub/main/registry.json"
+      "manifest_url": "https://raw.githubusercontent.com/eyshoit-commits/bitshit.cpu/main/hub/registry.json"
     }
   }
 }
