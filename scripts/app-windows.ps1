@@ -21,31 +21,46 @@ $TargetProfileDir = if ($Profile -eq 'dev') { 'debug' } else { $Profile }
 $RustTarget = 'x86_64-pc-windows-gnu'
 $MsysRoot = if ($env:BITSHIT_MSYS2_ROOT) { $env:BITSHIT_MSYS2_ROOT } else { 'C:\msys64' }
 $UcrtBin = Join-Path $MsysRoot 'ucrt64\bin'
+$Cargo = Join-Path $UcrtBin 'cargo.exe'
+$Rustc = Join-Path $UcrtBin 'rustc.exe'
+$Python = Join-Path $UcrtBin 'python.exe'
+$CMake = Join-Path $UcrtBin 'cmake.exe'
+$Ninja = Join-Path $UcrtBin 'ninja.exe'
+$Gcc = Join-Path $UcrtBin 'gcc.exe'
+$Gxx = Join-Path $UcrtBin 'g++.exe'
+$Ar = Join-Path $UcrtBin 'ar.exe'
+$PkgConfig = Join-Path $UcrtBin 'pkg-config.exe'
 
 function Step([string]$Message) { Write-Host "[bitshit] $Message" }
 function Fail([string]$Message) { throw "[bitshit] $Message" }
-function Need([string]$Command) { if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) { Fail "Missing required command: $Command" } }
+function Require-File([string]$Path) { if (-not (Test-Path $Path)) { Fail "Missing required tool: $Path" } }
 function Has-Cuda { return [bool](Get-Command nvcc.exe -ErrorAction SilentlyContinue) -and [bool](Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue) }
 
 $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
 $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
 $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
 
-Need git
-Need cargo
-Need rustc
-Need python.exe
-Need cmake.exe
-Need ninja.exe
-Need gcc.exe
-Need g++.exe
+foreach ($Tool in @($Cargo,$Rustc,$Python,$CMake,$Ninja,$Gcc,$Gxx,$Ar,$PkgConfig)) {
+    Require-File $Tool
+}
 
-$env:CC = Join-Path $UcrtBin 'gcc.exe'
-$env:CXX = Join-Path $UcrtBin 'g++.exe'
-$env:AR = Join-Path $UcrtBin 'ar.exe'
+$env:CC = $Gcc
+$env:CXX = $Gxx
+$env:AR = $Ar
 $env:CMAKE_GENERATOR = 'Ninja'
-$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = Join-Path $UcrtBin 'gcc.exe'
-$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_AR = Join-Path $UcrtBin 'ar.exe'
+$env:CMAKE_MAKE_PROGRAM = $Ninja
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = $Gcc
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_AR = $Ar
+$env:PKG_CONFIG = $PkgConfig
+$env:PKG_CONFIG_PATH = "$MsysRoot\ucrt64\lib\pkgconfig;$MsysRoot\ucrt64\share\pkgconfig"
+$env:OPENSSL_DIR = "$MsysRoot\ucrt64"
+$env:OPENSSL_LIB_DIR = "$MsysRoot\ucrt64\lib"
+$env:OPENSSL_INCLUDE_DIR = "$MsysRoot\ucrt64\include"
+
+$HostTriple = (& $Rustc -vV | Select-String '^host:' | ForEach-Object { $_.Line.Split(':',2)[1].Trim() })
+if ($HostTriple -ne 'x86_64-pc-windows-gnu') {
+    Fail "Wrong Rust host selected: $HostTriple. Expected x86_64-pc-windows-gnu from $Rustc"
+}
 
 $HasCuda = Has-Cuda
 if ($Backend -eq 'auto') { $Backend = if ($HasCuda) { 'cuda' } else { 'cpu' } }
@@ -85,17 +100,17 @@ if ($Backend -eq 'cuda') { $env:CARGO_FEATURE_CUDA = '1' }
 Step 'Applying public runtime and model-path migrations'
 Push-Location $SourceDir
 try {
-    & python.exe scripts/rebrand-main-cli.py
+    & $Python scripts/rebrand-main-cli.py
     if ($LASTEXITCODE -ne 0) { Fail "Runtime migration failed with exit code $LASTEXITCODE." }
-    & python.exe scripts/fix-model-runtime.py
+    & $Python scripts/fix-model-runtime.py
     if ($LASTEXITCODE -ne 0) { Fail "Model runtime migration failed with exit code $LASTEXITCODE." }
 } finally { Pop-Location }
 
 Step "Building backend=$Backend profile=$Profile target=$RustTarget"
 Push-Location $SourceDir
 try {
-    if (-not (Test-Path 'Cargo.lock')) { cargo generate-lockfile }
-    cargo build --locked --target $RustTarget --profile $Profile -p cmd --bin bitshit
+    if (-not (Test-Path 'Cargo.lock')) { & $Cargo generate-lockfile }
+    & $Cargo build --locked --target $RustTarget --profile $Profile -p cmd --bin bitshit
     if ($LASTEXITCODE -ne 0) { Fail "Cargo build failed with exit code $LASTEXITCODE." }
 } finally { Pop-Location }
 
@@ -104,7 +119,7 @@ if (-not (Test-Path $Built)) { Fail "Build completed without producing $Built" }
 $Target = Join-Path $BinDir 'bitshit.exe'
 Copy-Item -Force $Built $Target
 if (-not $NoLegacyAlias) { Copy-Item -Force $Built (Join-Path $BinDir 'cluaiz.exe') }
-@{ product='bitshit'; platform='windows'; toolchain='msys2-ucrt64'; rust_target=$RustTarget; backend=$Backend; profile=$Profile; binary=$Target; source=$SourceDir; models=$env:BITSHIT_MODELS_DIR } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
+@{ product='bitshit'; platform='windows'; toolchain='msys2-ucrt64'; rust_host=$HostTriple; rust_target=$RustTarget; backend=$Backend; profile=$Profile; binary=$Target; source=$SourceDir; models=$env:BITSHIT_MODELS_DIR } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
 Step "Installed $Target"
 Step "Models stored in $env:BITSHIT_MODELS_DIR"
 & $Target --version
