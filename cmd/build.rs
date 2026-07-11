@@ -51,6 +51,7 @@ fn main() {
     run_source_migration(repo_root, "fix-model-runtime.py");
     run_source_migration(repo_root, "fix-registry-cache.py");
     run_source_migration(repo_root, "fix-model-hub-load.py");
+    run_source_migration(repo_root, "fix-bitnet-routing.py");
 
     println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/main.rs").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("cmd/src/cli/pull.rs").display());
