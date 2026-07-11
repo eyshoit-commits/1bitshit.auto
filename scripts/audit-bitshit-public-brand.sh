@@ -33,15 +33,43 @@ for entry in "${public_checks[@]}"; do
   fi
 done
 
+# Positive assertions matter too. Merely deleting every brand string would make
+# the audit green while producing a nameless binary, a very human form of success.
+required_public_identity=(
+  'cmd/src/main.rs:command\(name = "bitshit"'
+  'cmd/src/main.rs:BitShit: Sovereign Neural Kernel'
+  'cmd/src/main.rs:run the global .bitshit. command'
+  'cmd/src/main.rs:Starting BitShit API daemon'
+  'cmd/src/main.rs:\[BitShit\]'
+  'cmd/src/main.rs:bitshit-core\.log'
+  'cmd/src/main.rs:std::env::var\("BITSHIT_PORT"\)'
+  'cmd/src/main.rs:std::env::set_var\("BITSHIT_HOME"'
+)
+
+for entry in "${required_public_identity[@]}"; do
+  path="${entry%%:*}"
+  pattern="${entry#*:}"
+  if ! grep -qE "$pattern" "$path"; then
+    printf '[PUBLIC-BRAND-FAIL] %s is missing required BitShit identity: %s\n' "$path" "$pattern" >&2
+    fail=1
+  fi
+done
+
 # Legacy fallbacks are allowed only when the new BitShit variable is present in
 # the same source file. This prevents compatibility code becoming the primary API.
-if grep -q 'cluaiz_PORT' cmd/src/main.rs && ! grep -q 'BITSHIT_PORT' cmd/src/main.rs; then
-  printf '[PUBLIC-BRAND-FAIL] cluaiz_PORT exists without BITSHIT_PORT primary support\n' >&2
+if grep -q 'cluaiz_PORT\|CLUAIZ_PORT' cmd/src/main.rs && ! grep -q 'BITSHIT_PORT' cmd/src/main.rs; then
+  printf '[PUBLIC-BRAND-FAIL] legacy port variables exist without BITSHIT_PORT primary support\n' >&2
   fail=1
 fi
 
-if grep -q 'cluaiz_HOME' cmd/src/main.rs && ! grep -q 'BITSHIT_HOME' cmd/src/main.rs; then
-  printf '[PUBLIC-BRAND-FAIL] cluaiz_HOME exists without BITSHIT_HOME primary support\n' >&2
+if grep -q 'cluaiz_HOME\|CLUAIZ_HOME' cmd/src/main.rs && ! grep -q 'BITSHIT_HOME' cmd/src/main.rs; then
+  printf '[PUBLIC-BRAND-FAIL] legacy home variables exist without BITSHIT_HOME primary support\n' >&2
+  fail=1
+fi
+
+python3 -m py_compile scripts/rebrand-main-cli.py
+if ! python3 scripts/rebrand-main-cli.py --check; then
+  printf '[PUBLIC-BRAND-FAIL] deterministic CLI transformer reports an incomplete migration\n' >&2
   fail=1
 fi
 
