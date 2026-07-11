@@ -176,7 +176,13 @@ esac
 log "Building backend=$BACKEND profile=$PROFILE"
 (
   cd "$SOURCE_DIR"
-  cargo build --locked --profile "$PROFILE" -p cmd --bin "$TARGET_BIN"
+  if [[ -f Cargo.lock ]]; then
+    cargo build --locked --profile "$PROFILE" -p cmd --bin "$TARGET_BIN"
+  else
+    warn "Cargo.lock is missing; generating a lockfile before the build"
+    cargo generate-lockfile
+    cargo build --profile "$PROFILE" -p cmd --bin "$TARGET_BIN"
+  fi
 )
 
 BUILT="$SOURCE_DIR/target/$PROFILE/$TARGET_BIN"
