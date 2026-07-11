@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "inference-engine/api",
-    "inference-engine/engines",
-    "inference-engine/engines/cluaiz-shared",
-    "inference-engine/engines/system-booster",
+    "Inference-engine/api",
+    "Inference-engine/engines",
+    "Inference-engine/engines/cluaiz-shared",
+    "Inference-engine/engines/system-booster",
     "cmd",
     "test/dummy_plugin",
     "inference-cel",
@@ -20,7 +20,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["BitShit Contributors"]
 license = "Apache-2.0"
-repository = "https://github.com/eyshoit-commits/bitshit.cpu"
+repository = "https://github.com/eyshoit-commits/1bitshit.auto"
 
 [profile.dev]
 debug = false
