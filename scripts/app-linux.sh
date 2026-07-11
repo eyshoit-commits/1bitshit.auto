@@ -5,12 +5,12 @@ PRODUCT="bitshit"
 REPO="https://github.com/eyshoit-commits/1bitshit.auto.git"
 INSTALL_DIR="${BITSHIT_INSTALL_DIR:-$HOME/.local/bin}"
 DATA_DIR="${BITSHIT_HOME:-$HOME/.bitshit}"
-LEGACY_DATA_DIR="${CLUAIZ_LEGACY_HOME:-${CLUAIZ_HOME:-$HOME/.cluaiz}}"
+INTERIM_DATA_DIR="${BITSHIT_INTERIM_HOME:-$HOME/.1bitshit}"
+LEGACY_DATA_DIR="${CLUAIZ_LEGACY_HOME:-$HOME/.cluaiz}"
 SOURCE_DIR="${BITSHIT_SOURCE_DIR:-$DATA_DIR/source}"
 PROFILE="${BITSHIT_PROFILE:-release}"
 TARGET_BIN="bitshit"
 LEGACY_BIN="cluaiz"
-MIGRATION_MARKER="$DATA_DIR/.migrated-from-cluaiz"
 
 log() { printf '\033[1;36m[bitshit]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[bitshit]\033[0m %s\n' "$*" >&2; }
@@ -69,11 +69,27 @@ case "$BACKEND" in
   *) die "Invalid Linux backend: $BACKEND" ;;
 esac
 
-if [[ $MIGRATE_LEGACY -eq 1 && "$LEGACY_DATA_DIR" != "$DATA_DIR" && -d "$LEGACY_DATA_DIR" && ! -e "$MIGRATION_MARKER" ]]; then
-  log "Migrating legacy data from $LEGACY_DATA_DIR to $DATA_DIR"
+copy_missing_tree() {
+  local source="$1"
+  local marker_name="$2"
+  local marker="$DATA_DIR/$marker_name"
+
+  [[ "$source" != "$DATA_DIR" ]] || return 0
+  [[ -d "$source" ]] || return 0
+  [[ ! -e "$marker" ]] || return 0
+
+  log "Migrating missing data from $source to $DATA_DIR"
   mkdir -p "$DATA_DIR"
-  cp -a -n "$LEGACY_DATA_DIR"/. "$DATA_DIR"/ 2>/dev/null || true
-  printf 'source=%s\ntarget=%s\nmigrated_at=%s\n' "$LEGACY_DATA_DIR" "$DATA_DIR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MIGRATION_MARKER"
+  cp -a -n "$source"/. "$DATA_DIR"/ 2>/dev/null || true
+  printf 'source=%s\ntarget=%s\nmigrated_at=%s\nmode=copy-missing\n' \
+    "$source" "$DATA_DIR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$marker"
+}
+
+if [[ $MIGRATE_LEGACY -eq 1 ]]; then
+  # The short-lived .1bitshit path is newer than .cluaiz and therefore gets
+  # first chance to populate missing files. Existing canonical files always win.
+  copy_missing_tree "$INTERIM_DATA_DIR" ".migrated-from-1bitshit"
+  copy_missing_tree "$LEGACY_DATA_DIR" ".migrated-from-cluaiz"
 fi
 
 mkdir -p "$DATA_DIR" "$INSTALL_DIR"
@@ -95,6 +111,7 @@ git -C "$SOURCE_DIR" submodule update --init --recursive
 # BITSHIT_HOME is canonical. CLUAIZ_HOME remains a compatibility variable for
 # internal crates that have not yet been renamed, but points to the same data.
 export BITSHIT_HOME="$DATA_DIR"
+export BITSHIT_INTERIM_HOME="$INTERIM_DATA_DIR"
 export CLUAIZ_HOME="$DATA_DIR"
 export CLUAIZ_LEGACY_HOME="$LEGACY_DATA_DIR"
 export BITSHIT_MODELS_DIR="$SOURCE_DIR/models/dl"
@@ -137,7 +154,7 @@ install -m 0755 "$BUILT" "$INSTALL_DIR/$TARGET_BIN"
 [[ $LEGACY_ALIAS -eq 1 ]] && ln -sfn "$TARGET_BIN" "$INSTALL_DIR/$LEGACY_BIN"
 
 cat > "$DATA_DIR/install.json" <<EOF
-{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR","runtime":"$DATA_DIR","legacy_source":"$LEGACY_DATA_DIR","models":"$SOURCE_DIR/models/dl"}
+{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR","runtime":"$DATA_DIR","interim_source":"$INTERIM_DATA_DIR","legacy_source":"$LEGACY_DATA_DIR","migration_mode":"copy-missing","models":"$SOURCE_DIR/models/dl"}
 EOF
 
 log "Installed $INSTALL_DIR/$TARGET_BIN"
