@@ -1,0 +1,10 @@
+# Paths owned by 1BitShit. During inbound Cluaiz merges these are restored
+# from the current 1BitShit branch unless explicitly removed from this list.
+install.sh
+install.ps1
+README.md
+SECURITY.md
+.github/
+scripts/
+docs/BITSHIT_MIGRATION.md
+package.json
