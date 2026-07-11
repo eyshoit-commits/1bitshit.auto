@@ -93,6 +93,7 @@ git -C "$SOURCE_DIR" submodule sync --recursive
 git -C "$SOURCE_DIR" submodule update --init --recursive
 
 export BITSHIT_HOME="$DATA_DIR"
+export BITSHIT_MODELS_DIR="$SOURCE_DIR/models/dl"
 export CLUAIZ_HOME="$LEGACY_DATA_DIR"
 export CXX="$CXX_BIN"
 export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF
@@ -103,6 +104,7 @@ log "Applying public runtime migration"
 (
   cd "$SOURCE_DIR"
   python3 scripts/rebrand-main-cli.py
+  python3 scripts/fix-model-runtime.py
 )
 
 log "Building backend=$BACKEND profile=$PROFILE"
@@ -132,9 +134,10 @@ install -m 0755 "$BUILT" "$INSTALL_DIR/$TARGET_BIN"
 [[ $LEGACY_ALIAS -eq 1 ]] && ln -sfn "$TARGET_BIN" "$INSTALL_DIR/$LEGACY_BIN"
 
 cat > "$DATA_DIR/install.json" <<EOF
-{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR","runtime":"$LEGACY_DATA_DIR"}
+{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR","runtime":"$LEGACY_DATA_DIR","models":"$SOURCE_DIR/models/dl"}
 EOF
 
 log "Installed $INSTALL_DIR/$TARGET_BIN"
 log "Runtime synchronized to $LEGACY_DATA_DIR"
+log "Models stored in $SOURCE_DIR/models/dl"
 "$INSTALL_DIR/$TARGET_BIN" --version || true
