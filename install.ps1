@@ -60,10 +60,14 @@ if (-not (Test-Path -LiteralPath $Setup)) {
     throw "[bitshit] Missing Windows setup script: $Setup"
 }
 
-$Forward = @('-Backend', $Backend)
-if ($Yes) { $Forward += '-Yes' }
-if ($NoLegacyAlias) { $Forward += '-NoLegacyAlias' }
-if ($NoMigrate) { $Forward += '-NoMigrate' }
+# Hashtable splatting preserves named PowerShell parameters. Array splatting would
+# pass '-Backend' as the first positional value, which ValidateSet then rejects.
+$Forward = @{
+    Backend = $Backend
+}
+if ($Yes) { $Forward.Yes = $true }
+if ($NoLegacyAlias) { $Forward.NoLegacyAlias = $true }
+if ($NoMigrate) { $Forward.NoMigrate = $true }
 
 & $Setup @Forward
 if ($LASTEXITCODE -ne 0) {
