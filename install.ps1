@@ -60,12 +60,12 @@ $env:GGML_METAL = 'OFF'
 Write-Step "Building backend=$Backend profile=$Profile"
 Push-Location $SourceDir
 try {
-    cargo build --locked --profile $Profile -p cmd --bin cluaiz
+    cargo build --locked --profile $Profile -p cmd --bin bitshit
 } finally {
     Pop-Location
 }
 
-$Built = Join-Path $SourceDir "target\$Profile\cluaiz.exe"
+$Built = Join-Path $SourceDir "target\$Profile\bitshit.exe"
 if (-not (Test-Path $Built)) { Fail "Build completed without producing $Built" }
 $Target = Join-Path $BinDir 'bitshit.exe'
 Copy-Item -Force $Built $Target
