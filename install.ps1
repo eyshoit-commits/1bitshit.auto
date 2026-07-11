@@ -21,6 +21,11 @@ function Need([string]$Command) {
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) { Fail "Missing required command: $Command" }
 }
 
+function Test-CudaToolchain {
+    return [bool](Get-Command nvcc -ErrorAction SilentlyContinue) -and
+           [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue)
+}
+
 function Migrate-LegacyData {
     if ($NoMigrate -or $LegacyHome -eq $HomeDir -or -not (Test-Path $LegacyHome) -or (Test-Path $MigrationMarker)) {
         return
@@ -39,7 +44,7 @@ function Migrate-LegacyData {
         } elseif (-not (Test-Path -LiteralPath $target)) {
             $parent = Split-Path -Parent $target
             if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-            Copy-Item -LiteralPath $_.FullName -Destination $target
+            Copy-Item -LiteralPath $_.FullName -Destination $target -Force
         }
     }
 
@@ -55,7 +60,13 @@ Need cargo
 Need rustc
 Need cmake
 
-$HasCuda = [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue)
+$HasMsvc = [bool](Get-Command cl.exe -ErrorAction SilentlyContinue)
+$HasClang = [bool](Get-Command clang-cl.exe -ErrorAction SilentlyContinue)
+if (-not $HasMsvc -and -not $HasClang) {
+    Fail 'Missing Windows C++ compiler. Start from a Visual Studio Developer PowerShell or install Visual Studio Build Tools with Desktop development with C++.'
+}
+
+$HasCuda = Test-CudaToolchain
 if ($Backend -eq 'auto') { $Backend = if ($HasCuda) { 'cuda' } else { 'cpu' } }
 
 if (-not $Yes) {
@@ -69,13 +80,16 @@ if (-not $Yes) {
     }
 }
 
-if ($Backend -eq 'cuda' -and -not $HasCuda) { Fail 'CUDA selected but nvidia-smi was not detected.' }
+if ($Backend -eq 'cuda' -and -not (Test-CudaToolchain)) {
+    Fail 'CUDA selected but both the CUDA toolkit (nvcc) and NVIDIA driver (nvidia-smi) are required.'
+}
 
 Migrate-LegacyData
 New-Item -ItemType Directory -Force -Path $HomeDir, $BinDir | Out-Null
 if (Test-Path (Join-Path $SourceDir '.git')) {
     Write-Step 'Updating source checkout'
-    git -C $SourceDir fetch --all --prune
+    git -C $SourceDir fetch origin --prune
+    git -C $SourceDir checkout -q main
     git -C $SourceDir reset --hard origin/main
 } else {
     if (Test-Path $SourceDir) { Remove-Item -Recurse -Force $SourceDir }
@@ -83,7 +97,12 @@ if (Test-Path (Join-Path $SourceDir '.git')) {
     git clone --recurse-submodules $Repo $SourceDir
 }
 
+if ($LASTEXITCODE -ne 0) { Fail 'Repository checkout failed.' }
+git -C $SourceDir submodule sync --recursive
+if ($LASTEXITCODE -ne 0) { Fail 'Submodule synchronization failed.' }
 git -C $SourceDir submodule update --init --recursive
+if ($LASTEXITCODE -ne 0) { Fail 'Submodule checkout failed.' }
+
 $env:BITSHIT_HOME = $HomeDir
 $env:CLUAIZ_HOME = $HomeDir # temporary internal compatibility during crate migration
 $env:GGML_CUDA = if ($Backend -eq 'cuda') { 'ON' } else { 'OFF' }
@@ -94,6 +113,7 @@ Write-Step "Building backend=$Backend profile=$Profile"
 Push-Location $SourceDir
 try {
     cargo build --locked --profile $Profile -p cmd --bin bitshit
+    if ($LASTEXITCODE -ne 0) { Fail "Cargo build failed with exit code $LASTEXITCODE." }
 } finally {
     Pop-Location
 }
@@ -117,10 +137,12 @@ if (-not $NoLegacyAlias) {
 } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
 
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($UserPath -notlike "*$BinDir*") {
-    $prefix = if ([string]::IsNullOrWhiteSpace($UserPath)) { '' } else { $UserPath.TrimEnd(';') + ';' }
-    [Environment]::SetEnvironmentVariable('Path', ($prefix + $BinDir), 'User')
+$PathEntries = @($UserPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if ($PathEntries -notcontains $BinDir) {
+    $PathEntries += $BinDir
+    [Environment]::SetEnvironmentVariable('Path', ($PathEntries -join ';'), 'User')
 }
 
 Write-Step "Installed $Target"
 & $Target --version
+if ($LASTEXITCODE -ne 0) { Fail "Installed binary failed its version check with exit code $LASTEXITCODE." }
