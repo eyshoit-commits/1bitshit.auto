@@ -138,7 +138,8 @@ $SourceMigrations = @(
     'fix-public-branding.py',
     'fix-model-runtime.py',
     'fix-registry-cache.py',
-    'fix-model-hub-load.py'
+    'fix-model-hub-load.py',
+    'fix-bitnet-routing.py'
 )
 
 Step 'Applying complete BitShit source migration pipeline'
