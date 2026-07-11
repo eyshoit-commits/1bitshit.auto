@@ -38,13 +38,12 @@ impl ColumnWidths {
                 .max(format!("{:.1} GB", m.manifest.download_size_gb).len());
             widths.ram = widths
                 .ram
-                .max(format!("{:.0} GB", m.manifest.ram_required_gb).len());
+                .max(format!("{:.1} GB", m.manifest.ram_required_gb).len());
             widths.params = widths.params.max(m.manifest.parameters.len());
             widths.tokens = widths.tokens.max(m.manifest.training_tokens.len());
             widths.ctx = widths.ctx.max(m.manifest.context_window.len());
         }
 
-        // Clamp name if terminal is too small
         if term_width < 80 {
             widths.name = 20;
         }
@@ -91,8 +90,8 @@ impl RegistryTable {
             sep.push_str(&format!("  {:-<ctx_w$}", "", ctx_w = w.ctx));
         }
 
-        header.push_str("  HEALTH");
-        sep.push_str("  ------");
+        header.push_str("  STATUS");
+        sep.push_str("  ------------");
 
         format!("{}\n{}", header.cyan().bold(), sep.bright_black())
     }
@@ -145,8 +144,8 @@ impl RegistryTable {
             ));
         }
 
-        let (dot, score, tps_str) = Self::calculate_health(model, hardware);
-        row.push_str(&format!("  {} {:<8}", dot, tps_str));
+        let (dot, score, status) = Self::calculate_health(model, hardware);
+        row.push_str(&format!("  {} {}", dot, status));
 
         if score == 0 {
             row.dimmed().to_string()
@@ -167,31 +166,23 @@ impl RegistryTable {
             hardware,
         );
 
-        let tps_str = if model.is_cached {
-            format!("{:.1} T/s", report.expected_tps)
-                .green()
-                .to_string()
-        } else {
-            format!("{:.1} T/s", report.expected_tps)
-        };
-
         if report.status == cluaiz_shared::hardware::speed_checker::HealthStatus::Panic {
-            return ("⚫ ".black(), 0, tps_str);
+            return ("⚫ ".black(), 0, "incompatible".to_string());
         }
 
         if model.is_cached {
-            return ("✔ ".green().bold(), 8, tps_str);
+            return ("✔ ".green().bold(), 8, "downloaded".green().to_string());
         }
 
         use cluaiz_shared::hardware::speed_checker::HealthStatus;
         match report.status {
-            HealthStatus::GodMode => ("🟣 ".magenta(), 7, tps_str),
-            HealthStatus::HyperSpeed => ("🔵 ".blue(), 6, tps_str),
-            HealthStatus::Instant => ("🟢 ".green(), 5, tps_str),
-            HealthStatus::Moderate => ("🟡 ".yellow(), 4, tps_str),
-            HealthStatus::Lagging => ("🟠 ".truecolor(255, 165, 0), 3, tps_str),
-            HealthStatus::Critical => ("🔴 ".red(), 2, tps_str),
-            HealthStatus::Panic => ("⚫ ".black(), 0, tps_str),
+            HealthStatus::GodMode => ("🟣 ".magenta(), 7, "available".to_string()),
+            HealthStatus::HyperSpeed => ("🔵 ".blue(), 6, "available".to_string()),
+            HealthStatus::Instant => ("🟢 ".green(), 5, "available".to_string()),
+            HealthStatus::Moderate => ("🟡 ".yellow(), 4, "available".to_string()),
+            HealthStatus::Lagging => ("🟠 ".truecolor(255, 165, 0), 3, "slow".to_string()),
+            HealthStatus::Critical => ("🔴 ".red(), 2, "critical".to_string()),
+            HealthStatus::Panic => ("⚫ ".black(), 0, "incompatible".to_string()),
         }
     }
 }
