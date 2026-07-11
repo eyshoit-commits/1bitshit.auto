@@ -1,0 +1,120 @@
+name: Propose 1BitShit changes to Cluaiz
+
+on:
+  workflow_dispatch:
+    inputs:
+      commits:
+        description: Space-separated 1BitShit commit SHAs to propose upstream, oldest first
+        required: true
+      title:
+        description: Pull request title
+        required: true
+      body:
+        description: Pull request body
+        required: false
+        default: Ported and validated from 1BitShit.
+      upstream_base:
+        description: Cluaiz base branch
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: propose-to-cluaiz
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPO: https://github.com/cluaiz/cluaiz.git
+      UPSTREAM_BASE: ${{ inputs.upstream_base }}
+      FORK_REPO: ${{ vars.CLUAIZ_FORK_REPO }}
+      GH_TOKEN: ${{ secrets.CLUAIZ_UPSTREAM_TOKEN }}
+    steps:
+      - name: Validate adapter configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$FORK_REPO" ]] || { echo 'Repository variable CLUAIZ_FORK_REPO is required, for example eyshoit-commits/cluaiz.' >&2; exit 2; }
+          [[ -n "$GH_TOKEN" ]] || { echo 'Repository secret CLUAIZ_UPSTREAM_TOKEN is required.' >&2; exit 2; }
+
+      - name: Checkout 1BitShit history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build clean upstream branch
+        id: branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name '1bitshit-upstream[bot]'
+          git config user.email '1bitshit-upstream[bot]@users.noreply.github.com'
+          git remote add cluaiz "$UPSTREAM_REPO"
+          git fetch --prune cluaiz "+refs/heads/${UPSTREAM_BASE}:refs/remotes/cluaiz/${UPSTREAM_BASE}"
+
+          branch="1bitshit/proposal-$(date -u +%Y%m%d-%H%M%S)"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git switch --detach "cluaiz/${UPSTREAM_BASE}"
+          git switch -c "$branch"
+
+          read -r -a commits <<< "${{ inputs.commits }}"
+          [[ ${#commits[@]} -gt 0 ]] || { echo 'No commits supplied.' >&2; exit 2; }
+          for commit in "${commits[@]}"; do
+            git cat-file -e "${commit}^{commit}"
+            git cherry-pick -x "$commit"
+          done
+
+      - name: Reject BitShit-only changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "cluaiz/${UPSTREAM_BASE}...HEAD")"
+          blocked=0
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            while IFS= read -r owned; do
+              [[ -z "$owned" || "$owned" == \#* ]] && continue
+              if [[ "$owned" == */ ]]; then
+                [[ "$path" == "$owned"* ]] || continue
+              else
+                [[ "$path" == "$owned" ]] || continue
+              fi
+              echo "Blocked BitShit-owned path in upstream proposal: $path" >&2
+              blocked=1
+            done < .github/upstream-sync/owned-paths.txt
+          done <<< "$changed"
+          [[ $blocked -eq 0 ]]
+
+      - name: Validate proposal on Cluaiz base
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --no-deps --format-version 1 >/dev/null
+          if [[ -f install.sh ]]; then bash -n install.sh; fi
+
+      - name: Push proposal branch to configured Cluaiz fork
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add proposal "https://x-access-token:${GH_TOKEN}@github.com/${FORK_REPO}.git"
+          git push --force-with-lease proposal "HEAD:refs/heads/${{ steps.branch.outputs.branch }}"
+
+      - name: Open pull request against Cluaiz
+        shell: bash
+        run: |
+          set -euo pipefail
+          fork_owner="${FORK_REPO%%/*}"
+          response="$(gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            /repos/cluaiz/cluaiz/pulls \
+            -f title='${{ inputs.title }}' \
+            -f head="${fork_owner}:${{ steps.branch.outputs.branch }}" \
+            -f base="${UPSTREAM_BASE}" \
+            -f body='${{ inputs.body }}
+
+Proposed from 1BitShit commits: `${{ inputs.commits }}`. Each commit was replayed with `cherry-pick -x` on the current Cluaiz base and BitShit-owned paths were rejected by the adapter.')"
+          echo "$response" | jq -r '.html_url'
