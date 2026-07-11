@@ -1,25 +1,20 @@
 param(
     [Parameter(Position = 0)]
-    [string]$Backend = ''
+    [ValidateSet('auto','cpu','cuda')]
+    [string]$Backend = 'auto'
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-function Say([string]$Message) {
-    Write-Host $Message
-}
-
-function Fail([string]$Message) {
-    throw "FEHLER: $Message"
-}
+function Say([string]$Message) { Write-Host $Message }
+function Fail([string]$Message) { throw "FEHLER: $Message" }
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Fail 'git wurde nicht gefunden.'
 }
 
 Set-Location $RepoRoot
-
 Say 'BitShit Update startet.'
 Say 'Hole den aktuellen Stand von GitHub.'
 
@@ -28,12 +23,9 @@ if ($LASTEXITCODE -ne 0) { Fail 'Git fetch ist fehlgeschlagen.' }
 
 $CurrentBranch = (git branch --show-current).Trim()
 if ([string]::IsNullOrWhiteSpace($CurrentBranch)) {
-    $CurrentBranch = 'main'
     git switch main
     if ($LASTEXITCODE -ne 0) { Fail 'Wechsel auf main ist fehlgeschlagen.' }
-}
-
-if ($CurrentBranch -ne 'main') {
+} elseif ($CurrentBranch -ne 'main') {
     Say "Wechsle von Branch $CurrentBranch auf main."
     git switch main
     if ($LASTEXITCODE -ne 0) { Fail 'Wechsel auf main ist fehlgeschlagen.' }
@@ -42,22 +34,13 @@ if ($CurrentBranch -ne 'main') {
 git reset --hard origin/main
 if ($LASTEXITCODE -ne 0) { Fail 'Aktualisierung auf origin/main ist fehlgeschlagen.' }
 
-$Installer = Join-Path $RepoRoot 'install.ps1'
+$Installer = Join-Path $RepoRoot 'scripts\setup-windows.ps1'
 if (-not (Test-Path $Installer)) {
-    Fail 'install.ps1 fehlt im Repository.'
+    Fail 'scripts\setup-windows.ps1 fehlt im Repository.'
 }
 
-Say 'Starte Aktualisierung und Neuinstallation.'
-if ([string]::IsNullOrWhiteSpace($Backend)) {
-    & $Installer
-} else {
-    if ($Backend -notin @('auto','cpu','cuda')) {
-        Fail "Ungueltiges Backend: $Backend. Erlaubt sind auto, cpu oder cuda."
-    }
-    Say "Verwende Backend: $Backend"
-    & $Installer -Backend $Backend -Yes
-}
-
+Say 'Starte Aktualisierung und Neuinstallation ueber MSYS2 UCRT64.'
+& $Installer -Backend $Backend -Yes
 if ($LASTEXITCODE -ne 0) {
     Fail "Installation ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
 }
