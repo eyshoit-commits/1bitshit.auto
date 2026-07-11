@@ -105,7 +105,6 @@ migrate_legacy_data() {
   log "Migrating legacy data from $LEGACY_DATA_DIR"
   mkdir -p "$DATA_DIR"
 
-  # Merge without deleting or modifying the legacy tree. Existing BitShit files win.
   while IFS= read -r -d '' entry; do
     relative="${entry#"$LEGACY_DATA_DIR"/}"
     target="$DATA_DIR/$relative"
@@ -158,6 +157,7 @@ migrate_legacy_data
 mkdir -p "$DATA_DIR" "$INSTALL_DIR"
 if [[ -d "$SOURCE_DIR/.git" ]]; then
   log "Updating source checkout"
+  git -C "$SOURCE_DIR" remote set-url origin "$REPO"
   git -C "$SOURCE_DIR" fetch origin --prune
   git -C "$SOURCE_DIR" checkout -q main
   git -C "$SOURCE_DIR" reset --hard origin/main
@@ -167,11 +167,14 @@ else
   git clone --recurse-submodules "$REPO" "$SOURCE_DIR"
 fi
 
+CURRENT_SOURCE_REMOTE="$(git -C "$SOURCE_DIR" remote get-url origin)"
+[[ "$CURRENT_SOURCE_REMOTE" == "$REPO" ]] || die "Source checkout points to unexpected repository: $CURRENT_SOURCE_REMOTE"
+
 git -C "$SOURCE_DIR" submodule sync --recursive
 git -C "$SOURCE_DIR" submodule update --init --recursive
 
 export BITSHIT_HOME="$DATA_DIR"
-export CLUAIZ_HOME="$DATA_DIR" # temporary internal compatibility during crate migration
+export CLUAIZ_HOME="$DATA_DIR"
 export CXX="$CXX_BIN"
 unset GGML_CUDA GGML_HIPBLAS GGML_METAL
 case "$BACKEND" in
