@@ -20,14 +20,6 @@ if errorlevel 1 exit /b %errorlevel%
 git reset --hard origin/main
 if errorlevel 1 exit /b %errorlevel%
 
-set "BACKEND=%~1"
-if not defined BACKEND set "BACKEND=auto"
-
-if /I not "%BACKEND%"=="auto" if /I not "%BACKEND%"=="cpu" if /I not "%BACKEND%"=="cuda" (
-    echo FEHLER: Ungueltiges Backend "%BACKEND%". Erlaubt sind auto, cpu oder cuda.
-    exit /b 2
-)
-
-echo Starte aktualisiertes PowerShell-Skript mit Backend %BACKEND%.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" %BACKEND%
+echo Starte aktualisiertes PowerShell-Skript.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" %*
 exit /b %errorlevel%
