@@ -74,6 +74,7 @@ if ($LASTEXITCODE -ne 0) { Fail 'Repository checkout failed.' }
 git -C $SourceDir submodule sync --recursive
 git -C $SourceDir submodule update --init --recursive
 $env:BITSHIT_HOME = $HomeDir
+$env:BITSHIT_MODELS_DIR = Join-Path $SourceDir 'models\dl'
 $env:CLUAIZ_HOME = $HomeDir
 $env:GGML_CUDA = if ($Backend -eq 'cuda') { 'ON' } else { 'OFF' }
 $env:GGML_HIPBLAS = 'OFF'
@@ -81,11 +82,13 @@ $env:GGML_METAL = 'OFF'
 Remove-Item Env:CARGO_FEATURE_CUDA -ErrorAction SilentlyContinue
 if ($Backend -eq 'cuda') { $env:CARGO_FEATURE_CUDA = '1' }
 
-Step 'Applying public runtime migration'
+Step 'Applying public runtime and model-path migrations'
 Push-Location $SourceDir
 try {
     & python.exe scripts/rebrand-main-cli.py
     if ($LASTEXITCODE -ne 0) { Fail "Runtime migration failed with exit code $LASTEXITCODE." }
+    & python.exe scripts/fix-model-runtime.py
+    if ($LASTEXITCODE -ne 0) { Fail "Model runtime migration failed with exit code $LASTEXITCODE." }
 } finally { Pop-Location }
 
 Step "Building backend=$Backend profile=$Profile target=$RustTarget"
@@ -101,6 +104,7 @@ if (-not (Test-Path $Built)) { Fail "Build completed without producing $Built" }
 $Target = Join-Path $BinDir 'bitshit.exe'
 Copy-Item -Force $Built $Target
 if (-not $NoLegacyAlias) { Copy-Item -Force $Built (Join-Path $BinDir 'cluaiz.exe') }
-@{ product='bitshit'; platform='windows'; toolchain='msys2-ucrt64'; rust_target=$RustTarget; backend=$Backend; profile=$Profile; binary=$Target; source=$SourceDir } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
+@{ product='bitshit'; platform='windows'; toolchain='msys2-ucrt64'; rust_target=$RustTarget; backend=$Backend; profile=$Profile; binary=$Target; source=$SourceDir; models=$env:BITSHIT_MODELS_DIR } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
 Step "Installed $Target"
+Step "Models stored in $env:BITSHIT_MODELS_DIR"
 & $Target --version
