@@ -167,10 +167,13 @@ NEW_TPS_BLOCK = '''    if user_vram > 0.0 {
 
 
 def replace_required(source: str, old: str, new: str, label: str, missing: list[str]) -> str:
+    # Check the desired state first. Some replacement blocks intentionally contain
+    # their original anchor, so checking `old` first would duplicate them on every build.
+    if new in source:
+        return source
     if old in source:
-        return source.replace(old, new)
-    if new not in source:
-        missing.append(label)
+        return source.replace(old, new, 1)
+    missing.append(label)
     return source
 
 
