@@ -18,17 +18,28 @@ Getesteter Installationsweg:
 ./install.sh --backend cpu
 ```
 
-## Noch nicht verifiziert
+## Aktiver Test
 
-### Windows 10
+### Windows 10 Pro N
 
-Status: nicht getestet
+Status: wird getestet, noch nicht erfolgreich verifiziert
 
-Geplanter Installationsweg aus Git Bash:
+Testsystem:
+
+```text
+Edition: Windows 10 Pro N
+Version: 22H2
+Installiert am: 15.05.2026
+Betriebssystembuild: 19045.6466
+```
+
+Testweg aus Git Bash:
 
 ```bash
 ./install.sh --backend cuda
 ```
+
+## Noch nicht verifiziert
 
 ### Windows 11
 
