@@ -2,8 +2,9 @@
 """Apply or verify the public BitShit runtime identity.
 
 The migration intentionally leaves internal crate and FFI identifiers untouched.
-It updates visible CLI text and removes hard-coded speed estimates that were not
-backed by a benchmark.
+It updates visible CLI text, removes hard-coded speed estimates that were not
+backed by a benchmark, and ensures GNU OpenMP symbols are globally available
+before the native GGUF engine is loaded on Linux.
 """
 
 from __future__ import annotations
@@ -54,6 +55,46 @@ OLD_HOME_REMOVE = 'std::env::remove_var("cluaiz_HOME");'
 NEW_HOME_REMOVE = '''std::env::remove_var("BITSHIT_HOME");
             std::env::remove_var("CLUAIZ_HOME");
             std::env::remove_var("cluaiz_HOME");'''
+
+OPENMP_ANCHOR = 'use crate::core::bootstrapper::Bootstrapper;\n'
+OPENMP_BLOCK = '''use crate::core::bootstrapper::Bootstrapper;
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn preload_openmp_runtime() -> Result<()> {
+    use std::ffi::{CStr, CString};
+
+    let candidates = ["libgomp.so.1", "libgomp.so"];
+    let mut last_error = String::from("library not found");
+
+    for candidate in candidates {
+        let name = CString::new(candidate).expect("static library name contains no NUL");
+        let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL) };
+        if !handle.is_null() {
+            return Ok(());
+        }
+
+        let error = unsafe { libc::dlerror() };
+        if !error.is_null() {
+            last_error = unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned();
+        }
+    }
+
+    Err(color_eyre::eyre::eyre!(
+        "GNU OpenMP runtime could not be loaded globally. Install libgomp (Ubuntu/Debian: libgomp1, Fedora: libgomp, Arch: gcc-libs). Last loader error: {}",
+        last_error
+    ))
+}
+
+#[cfg(any(not(unix), target_os = "macos"))]
+fn preload_openmp_runtime() -> Result<()> {
+    Ok(())
+}
+'''
+
+OPENMP_CALL_ANCHOR = '    color_eyre::install()?;\n'
+OPENMP_CALL = '''    color_eyre::install()?;
+    preload_openmp_runtime()?;
+'''
 
 OLD_TPS_BLOCK = '''    let projected_tps;
     if user_vram > 0.0 {
@@ -141,6 +182,8 @@ def transform_main(source: str) -> tuple[str, list[str]]:
     result = replace_required(result, OLD_PORT, NEW_PORT, "legacy serve port block", missing)
     result = replace_required(result, OLD_HOME_SET, NEW_HOME_SET, "legacy DevSync home assignment", missing)
     result = replace_required(result, OLD_HOME_REMOVE, NEW_HOME_REMOVE, "legacy DevSync home cleanup", missing)
+    result = replace_required(result, OPENMP_ANCHOR, OPENMP_BLOCK, "OpenMP preload function", missing)
+    result = replace_required(result, OPENMP_CALL_ANCHOR, OPENMP_CALL, "OpenMP preload call", missing)
     return result, missing
 
 
@@ -180,7 +223,7 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         return 1
 
-    print("Public BitShit runtime identity and benchmark output are consistent.")
+    print("Public BitShit runtime identity, OpenMP linkage and benchmark output are consistent.")
     return 0
 
 
