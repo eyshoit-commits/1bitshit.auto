@@ -115,10 +115,10 @@ esac
 log "Building backend=$BACKEND profile=$PROFILE"
 (
   cd "$SOURCE_DIR"
-  cargo build --locked --profile "$PROFILE" -p cmd --bin cluaiz
+  cargo build --locked --profile "$PROFILE" -p cmd --bin "$TARGET_BIN"
 )
 
-BUILT="$SOURCE_DIR/target/$PROFILE/$LEGACY_BIN"
+BUILT="$SOURCE_DIR/target/$PROFILE/$TARGET_BIN"
 [[ -x "$BUILT" ]] || die "Build completed without producing $BUILT"
 install -m 0755 "$BUILT" "$INSTALL_DIR/$TARGET_BIN"
 
