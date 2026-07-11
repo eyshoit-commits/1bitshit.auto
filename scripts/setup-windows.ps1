@@ -3,7 +3,8 @@ param(
     [string]$Backend = 'auto',
     [switch]$Yes,
     [switch]$NoLegacyAlias,
-    [switch]$NoMigrate
+    [switch]$NoMigrate,
+    [switch]$NoLaunch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -212,5 +213,6 @@ $AppArgs = @{ Backend = $Backend }
 if ($Yes) { $AppArgs.Yes = $true }
 if ($NoLegacyAlias) { $AppArgs.NoLegacyAlias = $true }
 if ($NoMigrate) { $AppArgs.NoMigrate = $true }
+if ($NoLaunch) { $AppArgs.NoLaunch = $true }
 & $App @AppArgs
 if ($LASTEXITCODE -ne 0) { Fail "Windows-Installation ist mit Exitcode $LASTEXITCODE fehlgeschlagen." }
