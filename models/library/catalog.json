@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "name": "Falcon-E 1B Instruct 1.58-bit",
+      "repo": "tiiuae/Falcon-E-1B-Instruct-GGUF",
+      "category": "chat",
+      "description": "Compact 1B instruction model with GGUF low-bit variants."
+    },
+    {
+      "name": "Falcon3 3B Instruct 1.58-bit",
+      "repo": "tiiuae/Falcon3-3B-Instruct-1.58bit-GGUF",
+      "category": "chat",
+      "description": "3B Falcon instruction model packaged as GGUF."
+    },
+    {
+      "name": "Qwen3 0.6B GGUF",
+      "repo": "Qwen/Qwen3-0.6B-GGUF",
+      "category": "chat",
+      "description": "Small Qwen3 model for fast local testing."
+    },
+    {
+      "name": "Qwen3 1.7B GGUF",
+      "repo": "Qwen/Qwen3-1.7B-GGUF",
+      "category": "chat",
+      "description": "Balanced small Qwen3 chat model."
+    },
+    {
+      "name": "Gemma 3 1B IT GGUF",
+      "repo": "bartowski/google_gemma-3-1b-it-GGUF",
+      "category": "chat",
+      "description": "Gemma 3 1B instruction model in GGUF format."
+    }
+  ]
+}
