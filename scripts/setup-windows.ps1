@@ -54,14 +54,24 @@ Install-Msys2
 
 Step 'Aktualisiere MSYS2 und installiere die vollständige UCRT64-Buildumgebung.'
 Invoke-Msys 'pacman -Sy --noconfirm'
-Invoke-Msys 'pacman -S --needed --noconfirm base-devel git make cmake ninja pkgconf mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-rust mingw-w64-ucrt-x86_64-python'
+Invoke-Msys 'pacman -S --needed --noconfirm base-devel git make cmake ninja pkgconf mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-rust mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-curl'
 
 $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
 $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
 $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
 
-foreach ($Tool in @('cargo.exe','rustc.exe','python.exe','gcc.exe','g++.exe','cmake.exe','ninja.exe','make.exe')) {
-    if (-not (Has $Tool)) { Fail "$Tool fehlt nach der MSYS2-Installation." }
+foreach ($ToolPath in @(
+    (Join-Path $UcrtBin 'cargo.exe'),
+    (Join-Path $UcrtBin 'rustc.exe'),
+    (Join-Path $UcrtBin 'python.exe'),
+    (Join-Path $UcrtBin 'gcc.exe'),
+    (Join-Path $UcrtBin 'g++.exe'),
+    (Join-Path $UcrtBin 'cmake.exe'),
+    (Join-Path $UcrtBin 'ninja.exe'),
+    (Join-Path $UcrtBin 'mingw32-make.exe'),
+    (Join-Path $UcrtBin 'pkg-config.exe')
+)) {
+    if (-not (Test-Path $ToolPath)) { Fail "$ToolPath fehlt nach der MSYS2-Installation." }
 }
 
 if ($Backend -eq 'cuda') {
@@ -76,6 +86,12 @@ $env:CC = Join-Path $UcrtBin 'gcc.exe'
 $env:CXX = Join-Path $UcrtBin 'g++.exe'
 $env:AR = Join-Path $UcrtBin 'ar.exe'
 $env:CMAKE_GENERATOR = 'Ninja'
+$env:CMAKE_MAKE_PROGRAM = Join-Path $UcrtBin 'ninja.exe'
+$env:PKG_CONFIG = Join-Path $UcrtBin 'pkg-config.exe'
+$env:PKG_CONFIG_PATH = "$MsysRoot\ucrt64\lib\pkgconfig;$MsysRoot\ucrt64\share\pkgconfig"
+$env:OPENSSL_DIR = "$MsysRoot\ucrt64"
+$env:OPENSSL_LIB_DIR = "$MsysRoot\ucrt64\lib"
+$env:OPENSSL_INCLUDE_DIR = "$MsysRoot\ucrt64\include"
 
 $App = Join-Path $RepoRoot 'scripts\app-windows.ps1'
 $AppArgs = @('-Backend', $Backend)
