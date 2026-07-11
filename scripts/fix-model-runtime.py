@@ -3,7 +3,8 @@
 
 The migration is strict and idempotent. It keeps model files visible under
 models/dl, prevents a second ONNX lazy-load after a successful GGUF handshake,
-and removes invented TPS projections from the pre-flight audit.
+removes invented TPS projections, and wires Model Hub switching to the concrete
+local GGUF file.
 """
 from __future__ import annotations
 
@@ -14,6 +15,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PULL = ROOT / "cmd" / "src" / "cli" / "pull.rs"
+DETAILS = ROOT / "cmd" / "src" / "ui" / "apps" / "registry" / "details.rs"
+REGISTRY = ROOT / "cmd" / "src" / "ui" / "apps" / "registry" / "mod.rs"
 ENVIRONMENT = ROOT / "Inference-engine" / "engines" / "cluaiz-shared" / "src" / "environment" / "mod.rs"
 DEFAULT_MODEL_ROOT = ROOT / "models" / "dl"
 
@@ -80,6 +83,24 @@ def main() -> int:
         PULL,
         """    let projected_tps;\n    if user_vram > 0.0 {\n        if total_required <= user_vram {\n            println!(\"    ├─ ⚡ Offload Status: Full GPU Acceleration (100% VRAM)\");\n            println!(\n                \"    ├─ 🧮 Remaining VRAM post-load: {:.2} GB\",\n                user_vram - total_required\n            );\n            projected_tps = 35.0;\n        } else {\n            let vram_ratio = (user_vram / total_required).clamp(0.0, 1.0);\n            println!(\n                \"    ├─ ⚡ Offload Status: Partial GPU Acceleration ({:.0}% in VRAM)\",\n                vram_ratio * 100.0\n            );\n            println!(\n                \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n                user_ram - (total_required - user_vram)\n            );\n            projected_tps = if vram_ratio > 0.8 {\n                22.0\n            } else if vram_ratio > 0.5 {\n                15.0\n            } else {\n                8.0\n            };\n        }\n    } else {\n        println!(\"    ├─ ⚡ Offload Status: CPU Inference (No dedicated VRAM)\");\n        println!(\n            \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n            user_ram - total_required\n        );\n        projected_tps = 5.0;\n    }\n\n    println!(\n        \"    ├─ 🚀 Projected Speed: ~{:.0} Tokens/Second (TPS)\",\n        projected_tps\n    );""",
         """    if user_vram > 0.0 {\n        if total_required <= user_vram {\n            println!(\"    ├─ ⚡ Offload Status: Full GPU Acceleration (100% VRAM)\");\n            println!(\n                \"    ├─ 🧮 Remaining VRAM post-load: {:.2} GB\",\n                user_vram - total_required\n            );\n        } else {\n            let vram_ratio = (user_vram / total_required).clamp(0.0, 1.0);\n            println!(\n                \"    ├─ ⚡ Offload Status: Partial GPU Acceleration ({:.0}% in VRAM)\",\n                vram_ratio * 100.0\n            );\n            println!(\n                \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n                user_ram - (total_required - user_vram)\n            );\n        }\n    } else {\n        println!(\"    ├─ ⚡ Offload Status: CPU Inference (No dedicated VRAM)\");\n        println!(\n            \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n            user_ram - total_required\n        );\n    }\n\n    println!(\"    ├─ 🚀 Measured Speed: unavailable until real generation\");""",
+    )
+
+    changed |= replace_once(
+        DETAILS,
+        """        if !rec.is_cached {\n            options.push(\"📥  INITIATE DOWNLOAD\".to_string());\n            back_btn_idx = 1;\n        }\n\n        options.push(\"↩  BACK\".to_string());\n\n        if rec.is_cached {\n            options.push(format!(\"{}\", \"🗑️  DELETE MODEL\".red().bold()));\n        }""",
+        """        if !rec.is_cached {\n            options.push(\"📥  INITIATE DOWNLOAD\".to_string());\n            back_btn_idx = 1;\n        } else {\n            options.push(\"▶  LOAD / SWITCH MODEL\".to_string());\n            back_btn_idx = 1;\n        }\n\n        options.push(\"↩  BACK\".to_string());\n\n        if rec.is_cached {\n            options.push(format!(\"{}\", \"🗑️  DELETE MODEL\".red().bold()));\n        }""",
+    )
+
+    changed |= replace_once(
+        DETAILS,
+        """                } else if choice.contains(\"DELETE\") {""",
+        """                } else if choice.contains(\"LOAD / SWITCH MODEL\") {\n                    for _ in 0..lines_printed + 3 {\n                        print!(\"\\x1B[1A\\x1B[2K\\r\");\n                    }\n                    let _ = stdout().flush();\n                    return Ok(Some(\"LOAD\".to_string()));\n                } else if choice.contains(\"DELETE\") {""",
+    )
+
+    changed |= replace_once(
+        REGISTRY,
+        """                        let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;\n                        Self::refresh_models(state);\n\n                        match action {\n                            Some(act) if act == \"DELETE\" => {\n                                history_segment = Some(format!(\"{} ❯ {} {}\", name.dimmed(), \"🗑️\".dimmed(), \"Deleted\".dimmed()));\n                            }\n                            _ => {\n                                history_segment = Some(name.dimmed().to_string());\n                            }\n                        }""",
+        """                        let model_id = rec.manifest.id.clone();\n                        let model_filename = rec.manifest.huggingface_filename.clone();\n                        let model_path = rec.manifest.local_path.clone().map(std::path::PathBuf::from);\n                        let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;\n\n                        if matches!(action.as_deref(), Some(\"LOAD\")) {\n                            let mut path = model_path.ok_or_else(|| {\n                                color_eyre::eyre::eyre!(\"Downloaded model has no local path: {}\", model_id)\n                            })?;\n                            if path.is_dir() {\n                                path = path.join(&model_filename);\n                            }\n                            if path.extension().and_then(|value| value.to_str()) != Some(\"gguf\") {\n                                return Err(color_eyre::eyre::eyre!(\n                                    \"Model switch refused non-GGUF path: {}\",\n                                    path.display()\n                                ));\n                            }\n\n                            tokio::task::block_in_place(|| {\n                                tokio::runtime::Handle::current().block_on(state.Core_engine.load_model(path))\n                            })\n                            .map_err(|error| color_eyre::eyre::eyre!(error))?;\n                            state._active_model_id = Some(model_id.clone());\n                            state.Core_engine.is_loaded.store(\n                                true,\n                                std::sync::atomic::Ordering::SeqCst,\n                            );\n                            history_segment = Some(format!(\"{} ❯ loaded\", name.dimmed()));\n                        } else if matches!(action.as_deref(), Some(\"DELETE\")) {\n                            history_segment = Some(format!(\"{} ❯ {} {}\", name.dimmed(), \"🗑️\".dimmed(), \"Deleted\".dimmed()));\n                        } else {\n                            history_segment = Some(name.dimmed().to_string());\n                        }\n\n                        Self::refresh_models(state);""",
     )
 
     changed |= replace_once(
