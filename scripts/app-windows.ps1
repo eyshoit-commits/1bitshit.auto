@@ -14,6 +14,8 @@ if ($env:OS -ne 'Windows_NT') { throw '[bitshit] scripts/app-windows.ps1 support
 
 $Repo = 'https://github.com/eyshoit-commits/1bitshit.auto.git'
 $HomeDir = if ($env:BITSHIT_HOME) { $env:BITSHIT_HOME } else { Join-Path $HOME '.bitshit' }
+$InterimHome = if ($env:BITSHIT_INTERIM_HOME) { $env:BITSHIT_INTERIM_HOME } else { Join-Path $HOME '.1bitshit' }
+$LegacyHome = if ($env:CLUAIZ_LEGACY_HOME) { $env:CLUAIZ_LEGACY_HOME } else { Join-Path $HOME '.cluaiz' }
 $SourceDir = if ($env:BITSHIT_SOURCE_DIR) { $env:BITSHIT_SOURCE_DIR } else { Join-Path $HomeDir 'source' }
 $BinDir = if ($env:BITSHIT_INSTALL_DIR) { $env:BITSHIT_INSTALL_DIR } else { Join-Path $HomeDir 'bin' }
 $Profile = if ($env:BITSHIT_PROFILE) { $env:BITSHIT_PROFILE } else { 'release' }
@@ -35,6 +37,29 @@ function Step([string]$Message) { Write-Host "[bitshit] $Message" }
 function Fail([string]$Message) { throw "[bitshit] $Message" }
 function Require-File([string]$Path) { if (-not (Test-Path $Path)) { Fail "Missing required tool: $Path" } }
 function Has-Cuda { return [bool](Get-Command nvcc.exe -ErrorAction SilentlyContinue) -and [bool](Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue) }
+
+function Copy-MissingTree([string]$Source, [string]$MarkerName) {
+    if ([string]::IsNullOrWhiteSpace($Source) -or $Source -eq $HomeDir -or -not (Test-Path $Source)) { return }
+
+    $Marker = Join-Path $HomeDir $MarkerName
+    if (Test-Path $Marker) { return }
+
+    Step "Migrating missing data from $Source to $HomeDir"
+    New-Item -ItemType Directory -Force -Path $HomeDir | Out-Null
+    Get-ChildItem -LiteralPath $Source -Force | ForEach-Object {
+        $Destination = Join-Path $HomeDir $_.Name
+        if (-not (Test-Path -LiteralPath $Destination)) {
+            Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
+        }
+    }
+
+    @(
+        "source=$Source"
+        "target=$HomeDir"
+        "migrated_at=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
+        'mode=copy-missing'
+    ) | Set-Content -Encoding UTF8 $Marker
+}
 
 $MachinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
 $UserPath = [Environment]::GetEnvironmentVariable('Path','User')
@@ -72,6 +97,13 @@ if (-not $Yes) {
 }
 if ($Backend -eq 'cuda' -and -not (Has-Cuda)) { Fail 'CUDA selected but nvcc and nvidia-smi are required.' }
 
+if (-not $NoMigrate) {
+    # .1bitshit is newer than .cluaiz, so it receives first chance to populate
+    # missing files. Existing canonical .bitshit data is never overwritten.
+    Copy-MissingTree $InterimHome '.migrated-from-1bitshit'
+    Copy-MissingTree $LegacyHome '.migrated-from-cluaiz'
+}
+
 New-Item -ItemType Directory -Force -Path $HomeDir, $BinDir | Out-Null
 if (Test-Path (Join-Path $SourceDir '.git')) {
     Step 'Updating source checkout'
@@ -89,8 +121,10 @@ if ($LASTEXITCODE -ne 0) { Fail 'Repository checkout failed.' }
 git -C $SourceDir submodule sync --recursive
 git -C $SourceDir submodule update --init --recursive
 $env:BITSHIT_HOME = $HomeDir
+$env:BITSHIT_INTERIM_HOME = $InterimHome
 $env:BITSHIT_MODELS_DIR = Join-Path $SourceDir 'models\dl'
 $env:CLUAIZ_HOME = $HomeDir
+$env:CLUAIZ_LEGACY_HOME = $LegacyHome
 $env:GGML_CUDA = if ($Backend -eq 'cuda') { 'ON' } else { 'OFF' }
 $env:GGML_HIPBLAS = 'OFF'
 $env:GGML_METAL = 'OFF'
@@ -121,7 +155,23 @@ if (-not (Test-Path $Built)) { Fail "Build completed without producing $Built" }
 $Target = Join-Path $BinDir 'bitshit.exe'
 Copy-Item -Force $Built $Target
 if (-not $NoLegacyAlias) { Copy-Item -Force $Built (Join-Path $BinDir 'cluaiz.exe') }
-@{ product='bitshit'; platform='windows'; toolchain='msys2-ucrt64'; rust_host=$HostTriple; rust_target=$RustTarget; backend=$Backend; profile=$Profile; binary=$Target; source=$SourceDir; models=$env:BITSHIT_MODELS_DIR } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
+@{
+    product='bitshit'
+    platform='windows'
+    toolchain='msys2-ucrt64'
+    rust_host=$HostTriple
+    rust_target=$RustTarget
+    backend=$Backend
+    profile=$Profile
+    binary=$Target
+    source=$SourceDir
+    runtime=$HomeDir
+    interim_source=$InterimHome
+    legacy_source=$LegacyHome
+    migration_mode='copy-missing'
+    models=$env:BITSHIT_MODELS_DIR
+} | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $HomeDir 'install.json')
 Step "Installed $Target"
+Step "Runtime synchronized to $HomeDir"
 Step "Models stored in $env:BITSHIT_MODELS_DIR"
 & $Target --version
