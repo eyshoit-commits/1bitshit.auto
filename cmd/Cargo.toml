@@ -11,11 +11,11 @@ path = "src/main.rs"
 
 [dependencies]
 # ── Root Architecture ──
-engines = { path = "../inference-engine/engines" }
-cluaiz_shared = { package = "cluaiz-shared", path = "../inference-engine/engines/cluaiz-shared" }
+engines = { path = "../Inference-engine/engines" }
+cluaiz_shared = { package = "cluaiz-shared", path = "../Inference-engine/engines/cluaiz-shared" }
 neural-core = { path = "../interface-engines/neural_core" }
 cluaiz_onnx = { package = "onnx", path = "../interface-engines/onnx" }
-cluaiz_api = { path = "../inference-engine/api" }
+cluaiz_api = { path = "../Inference-engine/api" }
 
 # ── Powerhouse Ratatui Framework ──
 ratatui = "0.30.0"
