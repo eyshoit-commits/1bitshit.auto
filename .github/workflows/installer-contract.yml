@@ -20,6 +20,7 @@ on:
       - scripts/fix-model-runtime.py
       - scripts/fix-registry-cache.py
       - scripts/fix-model-hub-load.py
+      - scripts/fix-bitnet-routing.py
       - tests/installer_contract.py
       - docs/PATH_MIGRATION.md
       - docs/SOURCE_MIGRATIONS.md
@@ -43,6 +44,7 @@ on:
       - scripts/fix-model-runtime.py
       - scripts/fix-registry-cache.py
       - scripts/fix-model-hub-load.py
+      - scripts/fix-bitnet-routing.py
       - tests/installer_contract.py
       - docs/PATH_MIGRATION.md
       - docs/SOURCE_MIGRATIONS.md
@@ -81,6 +83,7 @@ jobs:
               'scripts/fix-model-runtime.py',
               'scripts/fix-registry-cache.py',
               'scripts/fix-model-hub-load.py',
+              'scripts/fix-bitnet-routing.py',
           ]
           for script in scripts:
               py_compile.compile(script, doraise=True)
