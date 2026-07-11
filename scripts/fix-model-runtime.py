@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Apply model-runtime fixes required by every BitShit source build.
 
-The migration is idempotent. It keeps model files visible under models/dl,
-prevents a second ONNX lazy-load after a successful GGUF handshake, removes
-invented TPS projections, and wires Model Hub switching to the concrete local
-GGUF file. Newer source layouts are accepted instead of aborting Cargo builds.
+The migration is idempotent and tolerant of already-modernized source. It keeps
+model files visible under models/dl, prevents duplicate ONNX lazy-loads after a
+successful GGUF handshake, removes invented TPS projections, wires Model Hub
+switching to concrete local GGUF files, and routes the main-menu Model Hub entry
+to the real registry instead of an immediate Hugging Face prompt.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PULL = ROOT / "cmd" / "src" / "cli" / "pull.rs"
 DETAILS = ROOT / "cmd" / "src" / "ui" / "apps" / "registry" / "details.rs"
 REGISTRY = ROOT / "cmd" / "src" / "ui" / "apps" / "registry" / "mod.rs"
+MENU = ROOT / "cmd" / "src" / "ui" / "menu.rs"
 ENVIRONMENT = ROOT / "Inference-engine" / "engines" / "cluaiz-shared" / "src" / "environment" / "mod.rs"
 DEFAULT_MODEL_ROOT = ROOT / "models" / "dl"
 
@@ -26,7 +28,7 @@ def replace_once(path: Path, old: str, new: str) -> bool:
     if new in source:
         return False
     if old not in source:
-        print(f"Source layout already changed; skipped historical patch in {path}")
+        print(f"Source layout already changed; skipped historical patch in {path.relative_to(ROOT)}")
         return False
     path.write_text(source.replace(old, new, 1), encoding="utf-8")
     return True
@@ -75,39 +77,199 @@ def main() -> int:
     changed = False
 
     changed |= replace_once(
-        PULL,
-        """        let mut lock = state.Core_engine.router.lock().await;\n        lock.active_backend = engines::api::router::Backend::cluaiz(engine);\n    }\n    state._active_model_id = Some(manifest.id.clone());""",
-        """        let mut lock = state.Core_engine.router.lock().await;\n        lock.active_backend = engines::api::router::Backend::cluaiz(engine);\n    }\n    state.Core_engine.is_loaded.store(true, std::sync::atomic::Ordering::SeqCst);\n    state._active_model_id = Some(manifest.id.clone());""",
+        MENU,
+        '''            "🧠 Model Hub" => {
+                let m_opts = vec!["⬇️ Pull New Model", "🗑️ Delete Downloaded Model", "🔙 Back"];
+                if let Ok(m_ans) = Select::new("Model Hub:", m_opts).with_render_config(config.clone()).prompt() {
+                    print!("\\x1B[1A\\x1B[2K\\r"); stdout().flush()?;
+                    match m_ans {
+                        "⬇️ Pull New Model" => {
+                            if let Ok(id) = inquire::Text::new("Enter Model ID to Pull:").prompt() {
+                                let _ = crate::cli::pull::execute(&id).await;
+                            }
+                        }
+                        "🗑️ Delete Downloaded Model" => {
+                            let roster = engines::models::registry::CoreRoster::load_roster();
+                            let mut downloaded: Vec<_> = roster.into_iter().filter(|m| {
+                                m.local_path.is_some() || engines::models::fetch::ModelDownloader::get_cached_path(&m.category, &m.id, &m.huggingface_filename).is_some()
+                            }).collect();
+                            
+                            downloaded.sort_by(|a, b| a.name.cmp(&b.name));
+                            downloaded.dedup_by(|a, b| a.name == b.name);
+                            
+                            if downloaded.is_empty() {
+                                println!("  {} No downloaded models found.", "ℹ️".blue());
+                                std::thread::sleep(std::time::Duration::from_secs(2));
+                            } else {
+                                let options: Vec<String> = downloaded.iter().map(|m| format!("{} [{}]", m.name, m.architecture_type)).collect();
+                                if let Ok(ans) = Select::new("Select Model to Delete:", options).with_render_config(config.clone()).prompt() {
+                                    if let Some(model) = downloaded.iter().find(|m| format!("{} [{}]", m.name, m.architecture_type) == ans) {
+                                        let _ = crate::cli::rm::execute(&model.id).await;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }''',
+        '''            "🧠 Model Hub" => {
+                // Open the real model registry. Hugging Face input is offered
+                // only after the user explicitly selects Pull from Hugging Face.
+                crate::ui::apps::registry::RegistryApp::show(state, tx)?;
+            }''',
     )
 
     changed |= replace_once(
         PULL,
-        """    let projected_tps;\n    if user_vram > 0.0 {\n        if total_required <= user_vram {\n            println!(\"    ├─ ⚡ Offload Status: Full GPU Acceleration (100% VRAM)\");\n            println!(\n                \"    ├─ 🧮 Remaining VRAM post-load: {:.2} GB\",\n                user_vram - total_required\n            );\n            projected_tps = 35.0;\n        } else {\n            let vram_ratio = (user_vram / total_required).clamp(0.0, 1.0);\n            println!(\n                \"    ├─ ⚡ Offload Status: Partial GPU Acceleration ({:.0}% in VRAM)\",\n                vram_ratio * 100.0\n            );\n            println!(\n                \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n                user_ram - (total_required - user_vram)\n            );\n            projected_tps = if vram_ratio > 0.8 {\n                22.0\n            } else if vram_ratio > 0.5 {\n                15.0\n            } else {\n                8.0\n            };\n        }\n    } else {\n        println!(\"    ├─ ⚡ Offload Status: CPU Inference (No dedicated VRAM)\");\n        println!(\n            \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n            user_ram - total_required\n        );\n        projected_tps = 5.0;\n    }\n\n    println!(\n        \"    ├─ 🚀 Projected Speed: ~{:.0} Tokens/Second (TPS)\",\n        projected_tps\n    );""",
-        """    if user_vram > 0.0 {\n        if total_required <= user_vram {\n            println!(\"    ├─ ⚡ Offload Status: Full GPU Acceleration (100% VRAM)\");\n            println!(\n                \"    ├─ 🧮 Remaining VRAM post-load: {:.2} GB\",\n                user_vram - total_required\n            );\n        } else {\n            let vram_ratio = (user_vram / total_required).clamp(0.0, 1.0);\n            println!(\n                \"    ├─ ⚡ Offload Status: Partial GPU Acceleration ({:.0}% in VRAM)\",\n                vram_ratio * 100.0\n            );\n            println!(\n                \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n                user_ram - (total_required - user_vram)\n            );\n        }\n    } else {\n        println!(\"    ├─ ⚡ Offload Status: CPU Inference (No dedicated VRAM)\");\n        println!(\n            \"    ├─ 🧮 Remaining System RAM post-load: {:.2} GB\",\n            user_ram - total_required\n        );\n    }\n\n    println!(\"    ├─ 🚀 Measured Speed: unavailable until real generation\");""",
+        '''        let mut lock = state.Core_engine.router.lock().await;
+        lock.active_backend = engines::api::router::Backend::cluaiz(engine);
+    }
+    state._active_model_id = Some(manifest.id.clone());''',
+        '''        let mut lock = state.Core_engine.router.lock().await;
+        lock.active_backend = engines::api::router::Backend::cluaiz(engine);
+    }
+    state.Core_engine.is_loaded.store(true, std::sync::atomic::Ordering::SeqCst);
+    state._active_model_id = Some(manifest.id.clone());''',
+    )
+
+    changed |= replace_once(
+        PULL,
+        '''    let projected_tps;
+    if user_vram > 0.0 {
+        if total_required <= user_vram {
+            println!("    ├─ ⚡ Offload Status: Full GPU Acceleration (100% VRAM)");
+            println!(
+                "    ├─ 🧮 Remaining VRAM post-load: {:.2} GB",
+                user_vram - total_required
+            );
+            projected_tps = 35.0;
+        } else {
+            let vram_ratio = (user_vram / total_required).clamp(0.0, 1.0);
+            println!(
+                "    ├─ ⚡ Offload Status: Partial GPU Acceleration ({:.0}% in VRAM)",
+                vram_ratio * 100.0
+            );
+            println!(
+                "    ├─ 🧮 Remaining System RAM post-load: {:.2} GB",
+                user_ram - (total_required - user_vram)
+            );
+            projected_tps = if vram_ratio > 0.8 {
+                22.0
+            } else if vram_ratio > 0.5 {
+                15.0
+            } else {
+                8.0
+            };
+        }
+    } else {
+        println!("    ├─ ⚡ Offload Status: CPU Inference (No dedicated VRAM)");
+        println!(
+            "    ├─ 🧮 Remaining System RAM post-load: {:.2} GB",
+            user_ram - total_required
+        );
+        projected_tps = 5.0;
+    }
+
+    println!(
+        "    ├─ 🚀 Projected Speed: ~{:.0} Tokens/Second (TPS)",
+        projected_tps
+    );''',
+        '''    if user_vram > 0.0 {
+        if total_required <= user_vram {
+            println!("    ├─ ⚡ Offload Status: Full GPU Acceleration (100% VRAM)");
+            println!(
+                "    ├─ 🧮 Remaining VRAM post-load: {:.2} GB",
+                user_vram - total_required
+            );
+        } else {
+            let vram_ratio = (user_vram / total_required).clamp(0.0, 1.0);
+            println!(
+                "    ├─ ⚡ Offload Status: Partial GPU Acceleration ({:.0}% in VRAM)",
+                vram_ratio * 100.0
+            );
+            println!(
+                "    ├─ 🧮 Remaining System RAM post-load: {:.2} GB",
+                user_ram - (total_required - user_vram)
+            );
+        }
+    } else {
+        println!("    ├─ ⚡ Offload Status: CPU Inference (No dedicated VRAM)");
+        println!(
+            "    ├─ 🧮 Remaining System RAM post-load: {:.2} GB",
+            user_ram - total_required
+        );
+    }
+
+    println!("    ├─ 🚀 Measured Speed: unavailable until real generation");''',
     )
 
     changed |= replace_once(
         DETAILS,
-        """        if !rec.is_cached {\n            options.push(\"📥  INITIATE DOWNLOAD\".to_string());\n            back_btn_idx = 1;\n        }\n\n        options.push(\"↩  BACK\".to_string());\n\n        if rec.is_cached {\n            options.push(format!(\"{}\", \"🗑️  DELETE MODEL\".red().bold()));\n        }""",
-        """        if !rec.is_cached {\n            options.push(\"📥  INITIATE DOWNLOAD\".to_string());\n            back_btn_idx = 1;\n        } else {\n            options.push(\"▶  LOAD / SWITCH MODEL\".to_string());\n            back_btn_idx = 1;\n        }\n\n        options.push(\"↩  BACK\".to_string());\n\n        if rec.is_cached {\n            options.push(format!(\"{}\", \"🗑️  DELETE MODEL\".red().bold()));\n        }""",
+        '''        if !rec.is_cached {
+            options.push("📥  INITIATE DOWNLOAD".to_string());
+            back_btn_idx = 1;
+        }
+
+        options.push("↩  BACK".to_string());
+
+        if rec.is_cached {
+            options.push(format!("{}", "🗑️  DELETE MODEL".red().bold()));
+        }''',
+        '''        if !rec.is_cached {
+            options.push("📥  INITIATE DOWNLOAD".to_string());
+            back_btn_idx = 1;
+        } else {
+            options.push("▶  LOAD / SWITCH MODEL".to_string());
+            back_btn_idx = 1;
+        }
+
+        options.push("↩  BACK".to_string());
+
+        if rec.is_cached {
+            options.push(format!("{}", "🗑️  DELETE MODEL".red().bold()));
+        }''',
     )
 
     changed |= replace_once(
         DETAILS,
-        """                } else if choice.contains(\"DELETE\") {""",
-        """                } else if choice.contains(\"LOAD / SWITCH MODEL\") {\n                    for _ in 0..lines_printed + 3 {\n                        print!(\"\\x1B[1A\\x1B[2K\\r\");\n                    }\n                    let _ = stdout().flush();\n                    return Ok(Some(\"LOAD\".to_string()));\n                } else if choice.contains(\"DELETE\") {""",
-    )
-
-    changed |= replace_once(
-        REGISTRY,
-        """                        let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;\n                        Self::refresh_models(state);\n\n                        match action {\n                            Some(act) if act == \"DELETE\" => {\n                                history_segment = Some(format!(\"{} ❯ {} {}\", name.dimmed(), \"🗑️\".dimmed(), \"Deleted\".dimmed()));\n                            }\n                            _ => {\n                                history_segment = Some(name.dimmed().to_string());\n                            }\n                        }""",
-        """                        let model_id = rec.manifest.id.clone();\n                        let model_filename = rec.manifest.huggingface_filename.clone();\n                        let model_path = rec.manifest.local_path.clone().map(std::path::PathBuf::from);\n                        let action = details::show_details(idx, rec, total_ram, &base_path, tx)?;\n\n                        if matches!(action.as_deref(), Some(\"LOAD\")) {\n                            let mut path = model_path.ok_or_else(|| {\n                                color_eyre::eyre::eyre!(\"Downloaded model has no local path: {}\", model_id)\n                            })?;\n                            if path.is_dir() {\n                                path = path.join(&model_filename);\n                            }\n                            if path.extension().and_then(|value| value.to_str()) != Some(\"gguf\") {\n                                return Err(color_eyre::eyre::eyre!(\n                                    \"Model switch refused non-GGUF path: {}\",\n                                    path.display()\n                                ));\n                            }\n\n                            tokio::task::block_in_place(|| {\n                                tokio::runtime::Handle::current().block_on(state.Core_engine.load_model(path))\n                            })\n                            .map_err(|error| color_eyre::eyre::eyre!(error))?;\n                            state._active_model_id = Some(model_id.clone());\n                            state.Core_engine.is_loaded.store(\n                                true,\n                                std::sync::atomic::Ordering::SeqCst,\n                            );\n                            history_segment = Some(format!(\"{} ❯ loaded\", name.dimmed()));\n                        } else if matches!(action.as_deref(), Some(\"DELETE\")) {\n                            history_segment = Some(format!(\"{} ❯ {} {}\", name.dimmed(), \"🗑️\".dimmed(), \"Deleted\".dimmed()));\n                        } else {\n                            history_segment = Some(name.dimmed().to_string());\n                        }\n\n                        Self::refresh_models(state);""",
+        '''                } else if choice.contains("DELETE") {''',
+        '''                } else if choice.contains("LOAD / SWITCH MODEL") {
+                    for _ in 0..lines_printed + 3 {
+                        print!("\\x1B[1A\\x1B[2K\\r");
+                    }
+                    let _ = stdout().flush();
+                    return Ok(Some("LOAD".to_string()));
+                } else if choice.contains("DELETE") {''',
     )
 
     changed |= replace_once(
         ENVIRONMENT,
-        """    pub fn models_dir(&self) -> PathBuf {\n        self.global_dir.join(\"models\")\n    }""",
-        """    pub fn models_dir(&self) -> PathBuf {\n        if let Ok(path) = std::env::var(\"BITSHIT_MODELS_DIR\") {\n            return PathBuf::from(path);\n        }\n        let current = std::env::current_dir().unwrap_or_else(|_| PathBuf::from(\".\"));\n        if current.join(\"Cargo.toml\").is_file() && current.join(\"models\").is_dir() {\n            return current.join(\"models\").join(\"dl\");\n        }\n        if let Ok(home) = std::env::var(\"BITSHIT_HOME\") {\n            let installed_source = PathBuf::from(home).join(\"source\");\n            if installed_source.join(\"Cargo.toml\").is_file() {\n                return installed_source.join(\"models\").join(\"dl\");\n            }\n        }\n        if let Some(home) = dirs::home_dir() {\n            let installed_source = home.join(\".bitshit\").join(\"source\");\n            if installed_source.join(\"Cargo.toml\").is_file() {\n                return installed_source.join(\"models\").join(\"dl\");\n            }\n        }\n        self.global_dir.join(\"models\").join(\"dl\")\n    }""",
+        '''    pub fn models_dir(&self) -> PathBuf {
+        self.global_dir.join("models")
+    }''',
+        '''    pub fn models_dir(&self) -> PathBuf {
+        if let Ok(path) = std::env::var("BITSHIT_MODELS_DIR") {
+            return PathBuf::from(path);
+        }
+        let current = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        if current.join("Cargo.toml").is_file() && current.join("models").is_dir() {
+            return current.join("models").join("dl");
+        }
+        if let Ok(home) = std::env::var("BITSHIT_HOME") {
+            let installed_source = PathBuf::from(home).join("source");
+            if installed_source.join("Cargo.toml").is_file() {
+                return installed_source.join("models").join("dl");
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            let installed_source = home.join(".bitshit").join("source");
+            if installed_source.join("Cargo.toml").is_file() {
+                return installed_source.join("models").join("dl");
+            }
+        }
+        self.global_dir.join("models").join("dl")
+    }''',
     )
 
     copied = migrate_legacy_models()
