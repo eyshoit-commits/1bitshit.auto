@@ -8,7 +8,7 @@ PASS_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --backend) BACKEND="$2"; PASS_ARGS+=(--backend "$2"); shift 2 ;;
-    --yes|-y|--no-legacy-alias|--no-migrate) PASS_ARGS+=("$1"); shift ;;
+    --yes|-y|--no-legacy-alias|--no-migrate|--no-launch) PASS_ARGS+=("$1"); shift ;;
     *) printf 'FEHLER: Unbekannte Option: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
