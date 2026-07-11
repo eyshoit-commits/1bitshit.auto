@@ -1,0 +1,39 @@
+name: BitShit Rebrand Verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'rebrand/**'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-rebrand:
+    name: Verify installers and product identity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: bash -n install.sh scripts/verify-bitshit-rebrand.sh
+
+      - name: Validate PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./install.ps1),
+            [ref]$null,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+
+      - name: Verify BitShit rebrand invariants
+        run: bash scripts/verify-bitshit-rebrand.sh
