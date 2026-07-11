@@ -4,23 +4,17 @@ use super::*;
 #[no_mangle]
 pub extern "C" fn cluaiz_kernel_init() -> *const std::os::raw::c_char {
     unsafe {
-        // 🤫 Sovereign Silence: Hard-redirect native stdout/stderr to NUL
-        // This stops all non-callback logs (CUDA Graph, etc.) from polluting the TUI.
-        /* 🧪 Debug Mode: Temporarily disabled NUL redirection
-        #[cfg(windows)]
-        {
-            let n_path = std::ffi::CString::new("NUL").unwrap();
-            let mode = std::ffi::CString::new("w").unwrap();
-            libc::freopen(n_path.as_ptr(), mode.as_ptr(), libc::stdout);
-            libc::freopen(n_path.as_ptr(), mode.as_ptr(), libc::stderr);
-        }
-        */
+        // Redirect native stdout/stderr to the platform null device so
+        // llama.cpp and backend logs do not pollute the TUI.
         #[cfg(not(windows))]
         {
             let n_path = std::ffi::CString::new("/dev/null").unwrap();
-            let mode = std::ffi::CString::new("w").unwrap();
-            libc::freopen(n_path.as_ptr(), mode.as_ptr(), libc::stdout);
-            libc::freopen(n_path.as_ptr(), mode.as_ptr(), libc::stderr);
+            let fd = libc::open(n_path.as_ptr(), libc::O_WRONLY);
+            if fd >= 0 {
+                libc::dup2(fd, libc::STDOUT_FILENO);
+                libc::dup2(fd, libc::STDERR_FILENO);
+                libc::close(fd);
+            }
         }
 
         // Also set the callback for handled logs
@@ -94,7 +88,6 @@ pub extern "C" fn cluaiz_kernel_instantiate(
         let context = cluaizContext::boot(dna, cluaiz_shared::TemplateManager::default());
         let mut engine = Box::new(RuntimeB::new(&path_str, context));
 
-        // Inject Booster Configuration from Caller
         if !booster_ptr.is_null() {
             let booster_ctx = unsafe { *booster_ptr };
             cluaiz_shared::dev_info!(
@@ -138,7 +131,6 @@ pub extern "C" fn cluaiz_kernel_instantiate(
                     Some(booster_ctx.max_context_length as usize);
             }
         } else {
-            // Self-load from Binary Booster Truth if FFI was blank
             if let Ok(booster) =
                 cluaiz_shared::hardware::governor::HardwareGovernor::load_booster_settings()
             {
@@ -146,7 +138,6 @@ pub extern "C" fn cluaiz_kernel_instantiate(
             }
         }
 
-        // 🧬 Trigger Native Load immediately on instantiation
         if let Err(e) = engine.load_native() {
             cluaiz_shared::dev_info!("❌ [Llama.cpp-Kernel] Native Load Failed: {}", e);
             tracing::error!("❌ [Llama.cpp-Kernel] Native Load Failed: {}", e);
@@ -225,10 +216,6 @@ pub extern "C" fn cluaiz_kernel_free(engine_ptr: *mut RuntimeB) {
         if !engine_ptr.is_null() {
             unsafe {
                 let _ = Box::from_raw(engine_ptr);
-                // 🛑 CRITICAL FIX: DO NOT call llama_backend_free() here!
-                // llama_backend_free() destroys the global llama.cpp state.
-                // If a background thread (CompilerDaemon) instantiates and drops an engine,
-                // calling this will kill the active Chat Engine in the main thread!
             }
         }
     }));
@@ -260,7 +247,6 @@ pub extern "C" fn cluaiz_kernel_dump_kv_cache(
 
         let engine = unsafe { &mut *engine_ptr };
         if let Some(ref native) = engine.native {
-            // Using the FFI bindings to save KV cache state
             if !native.ctx_ptr.is_null() {
                 let c_path = std::ffi::CString::new(path).unwrap_or_default();
                 let bytes_written = unsafe {
@@ -268,7 +254,7 @@ pub extern "C" fn cluaiz_kernel_dump_kv_cache(
                         crate::ffi::llama_cpp::llama_state_seq_save_file(
                             native.ctx_ptr,
                             c_path.as_ptr(),
-                            0, // seq_id
+                            0,
                             engine.last_prefilled_tokens.as_ptr(),
                             engine.last_prefilled_tokens.len(),
                         )
@@ -276,17 +262,13 @@ pub extern "C" fn cluaiz_kernel_dump_kv_cache(
                         crate::ffi::llama_cpp::llama_state_seq_save_file(
                             native.ctx_ptr,
                             c_path.as_ptr(),
-                            0, // seq_id
+                            0,
                             std::ptr::null(),
                             0,
                         )
                     }
                 };
-                if bytes_written > 0 {
-                    0
-                } else {
-                    -2
-                }
+                if bytes_written > 0 { 0 } else { -2 }
             } else {
                 -3
             }
@@ -319,20 +301,21 @@ pub extern "C" fn cluaiz_kernel_load_kv_cache(
         if let Some(ref native) = engine.native {
             if !native.ctx_ptr.is_null() {
                 let c_path = std::ffi::CString::new(path).unwrap_or_default();
-                let mut tokens = vec![0i32; native.n_ctx as usize]; // Dynamic tokens vector
+                let mut tokens = vec![0i32; native.n_ctx as usize];
                 let mut n_tokens_out: usize = 0;
                 let bytes_read = unsafe {
                     crate::ffi::llama_cpp::llama_state_seq_load_file(
                         native.ctx_ptr,
                         c_path.as_ptr(),
-                        0, // seq_id
+                        0,
                         tokens.as_mut_ptr(),
                         tokens.len(),
-                        &mut n_tokens_out as *mut usize,
+                        &mut n_tokens_out,
                     )
                 };
                 if bytes_read > 0 {
-                    engine.last_prefilled_tokens = tokens[..n_tokens_out].to_vec();
+                    tokens.truncate(n_tokens_out);
+                    engine.last_prefilled_tokens = tokens;
                     0
                 } else {
                     -2
