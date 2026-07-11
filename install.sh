@@ -38,7 +38,11 @@ LEGACY_ALIAS=1
 MIGRATE_LEGACY=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --backend) BACKEND="${2:-}"; shift 2 ;;
+    --backend)
+      [[ $# -ge 2 && -n "${2:-}" ]] || die "--backend requires a value"
+      BACKEND="$2"
+      shift 2
+      ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --no-legacy-alias) LEGACY_ALIAS=0; shift ;;
     --no-migrate) MIGRATE_LEGACY=0; shift ;;
@@ -55,12 +59,29 @@ need rustc
 need cmake
 need make
 
-has_nvidia() { command -v nvidia-smi >/dev/null 2>&1 || [[ -e /proc/driver/nvidia/version ]]; }
-has_rocm() { command -v rocminfo >/dev/null 2>&1 || command -v hipcc >/dev/null 2>&1; }
-has_metal() { [[ "$(uname -s)" == "Darwin" ]] && command -v xcrun >/dev/null 2>&1; }
+if command -v c++ >/dev/null 2>&1; then
+  CXX_BIN="$(command -v c++)"
+elif command -v clang++ >/dev/null 2>&1; then
+  CXX_BIN="$(command -v clang++)"
+elif command -v g++ >/dev/null 2>&1; then
+  CXX_BIN="$(command -v g++)"
+else
+  die "Missing C++ compiler (c++, clang++, or g++)"
+fi
+
+has_cuda() {
+  command -v nvcc >/dev/null 2>&1 &&
+    { command -v nvidia-smi >/dev/null 2>&1 || [[ -e /proc/driver/nvidia/version ]]; }
+}
+has_rocm() { command -v hipcc >/dev/null 2>&1 && command -v rocminfo >/dev/null 2>&1; }
+has_metal() {
+  [[ "$(uname -s)" == "Darwin" ]] &&
+    command -v xcrun >/dev/null 2>&1 &&
+    xcrun --find clang >/dev/null 2>&1
+}
 
 auto_backend() {
-  if has_nvidia; then echo cuda
+  if has_cuda; then echo cuda
   elif has_rocm; then echo rocm
   elif has_metal; then echo metal
   else echo cpu
@@ -80,7 +101,13 @@ migrate_legacy_data() {
   while IFS= read -r -d '' entry; do
     relative="${entry#"$LEGACY_DATA_DIR"/}"
     target="$DATA_DIR/$relative"
-    if [[ -d "$entry" ]]; then
+
+    if [[ -L "$entry" ]]; then
+      if [[ ! -e "$target" && ! -L "$target" ]]; then
+        mkdir -p "$(dirname "$target")"
+        cp -a "$entry" "$target"
+      fi
+    elif [[ -d "$entry" ]]; then
       mkdir -p "$target"
     elif [[ ! -e "$target" ]]; then
       mkdir -p "$(dirname "$target")"
@@ -114,16 +141,17 @@ elif [[ "$BACKEND" == auto ]]; then
 fi
 
 case "$BACKEND" in
-  cuda) has_nvidia || die "CUDA selected but no NVIDIA driver/device was detected." ;;
-  rocm) has_rocm || die "ROCm selected but rocminfo/hipcc was not detected." ;;
-  metal) has_metal || die "Metal selected but this is not a configured macOS/Xcode system." ;;
+  cuda) has_cuda || die "CUDA selected but both the CUDA toolkit (nvcc) and NVIDIA driver/device are required." ;;
+  rocm) has_rocm || die "ROCm selected but both hipcc and rocminfo are required." ;;
+  metal) has_metal || die "Metal selected but macOS with the Xcode command-line tools is required." ;;
 esac
 
 migrate_legacy_data
 mkdir -p "$DATA_DIR" "$INSTALL_DIR"
 if [[ -d "$SOURCE_DIR/.git" ]]; then
   log "Updating source checkout"
-  git -C "$SOURCE_DIR" fetch --all --prune
+  git -C "$SOURCE_DIR" fetch origin --prune
+  git -C "$SOURCE_DIR" checkout -q main
   git -C "$SOURCE_DIR" reset --hard origin/main
 else
   rm -rf "$SOURCE_DIR"
@@ -131,16 +159,18 @@ else
   git clone --recurse-submodules "$REPO" "$SOURCE_DIR"
 fi
 
+git -C "$SOURCE_DIR" submodule sync --recursive
 git -C "$SOURCE_DIR" submodule update --init --recursive
 
 export BITSHIT_HOME="$DATA_DIR"
 export CLUAIZ_HOME="$DATA_DIR" # temporary internal compatibility during crate migration
+export CXX="$CXX_BIN"
 unset GGML_CUDA GGML_HIPBLAS GGML_METAL
 case "$BACKEND" in
   cpu) export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF ;;
-  cuda) export GGML_CUDA=ON ;;
-  rocm) export GGML_HIPBLAS=ON ;;
-  metal) export GGML_METAL=ON ;;
+  cuda) export GGML_CUDA=ON GGML_HIPBLAS=OFF GGML_METAL=OFF ;;
+  rocm) export GGML_CUDA=OFF GGML_HIPBLAS=ON GGML_METAL=OFF ;;
+  metal) export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=ON ;;
 esac
 
 log "Building backend=$BACKEND profile=$PROFILE"
