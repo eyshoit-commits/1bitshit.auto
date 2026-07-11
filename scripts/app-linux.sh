@@ -92,7 +92,7 @@ git -C "$SOURCE_DIR" submodule sync --recursive
 git -C "$SOURCE_DIR" submodule update --init --recursive
 
 export BITSHIT_HOME="$DATA_DIR"
-export CLUAIZ_HOME="$DATA_DIR"
+export CLUAIZ_HOME="$LEGACY_DATA_DIR"
 export CXX="$CXX_BIN"
 export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF
 [[ "$BACKEND" == cuda ]] && export GGML_CUDA=ON
@@ -108,12 +108,26 @@ log "Building backend=$BACKEND profile=$PROFILE"
 TARGET_PROFILE_DIR="$PROFILE"; [[ "$PROFILE" == dev ]] && TARGET_PROFILE_DIR=debug
 BUILT="$SOURCE_DIR/target/$TARGET_PROFILE_DIR/$TARGET_BIN"
 [[ -x "$BUILT" ]] || die "Build completed without producing $BUILT"
+
+log "Synchronizing local engine and kernel artifacts"
+(
+  cd "$SOURCE_DIR"
+  "$BUILT" dev-sync all
+)
+
+ENGINE_EXT="so"
+ENGINE_PATH="$LEGACY_DATA_DIR/engine/cluaiz-engine.$ENGINE_EXT"
+KERNEL_PATH="$LEGACY_DATA_DIR/engine/cluaiz-llama.$ENGINE_EXT"
+[[ -f "$ENGINE_PATH" ]] || die "Runtime synchronization did not produce $ENGINE_PATH"
+[[ -f "$KERNEL_PATH" ]] || die "Runtime synchronization did not produce $KERNEL_PATH"
+
 install -m 0755 "$BUILT" "$INSTALL_DIR/$TARGET_BIN"
 [[ $LEGACY_ALIAS -eq 1 ]] && ln -sfn "$TARGET_BIN" "$INSTALL_DIR/$LEGACY_BIN"
 
 cat > "$DATA_DIR/install.json" <<EOF
-{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR"}
+{"product":"bitshit","platform":"linux","backend":"$BACKEND","profile":"$PROFILE","binary":"$INSTALL_DIR/$TARGET_BIN","source":"$SOURCE_DIR","runtime":"$LEGACY_DATA_DIR"}
 EOF
 
 log "Installed $INSTALL_DIR/$TARGET_BIN"
+log "Runtime synchronized to $LEGACY_DATA_DIR"
 "$INSTALL_DIR/$TARGET_BIN" --version || true
