@@ -60,6 +60,8 @@ $env:CLUAIZ_HOME = $HomeDir
 $env:GGML_CUDA = if ($Backend -eq 'cuda') { 'ON' } else { 'OFF' }
 $env:GGML_HIPBLAS = 'OFF'
 $env:GGML_METAL = 'OFF'
+Remove-Item Env:CARGO_FEATURE_CUDA -ErrorAction SilentlyContinue
+if ($Backend -eq 'cuda') { $env:CARGO_FEATURE_CUDA = '1' }
 
 Step "Building backend=$Backend profile=$Profile"
 Push-Location $SourceDir
