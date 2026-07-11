@@ -1,125 +1,144 @@
-#!/bin/bash
-# cluaiz Core Infrastructure Installer - VERSION 0.1.0
-# Industrial Standard Deployment Script
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-set -euo pipefail
+PRODUCT="bitshit"
+REPO="https://github.com/eyshoit-commits/bitshit.cpu.git"
+INSTALL_DIR="${BITSHIT_INSTALL_DIR:-$HOME/.local/bin}"
+DATA_DIR="${BITSHIT_HOME:-$HOME/.bitshit}"
+SOURCE_DIR="${BITSHIT_SOURCE_DIR:-$DATA_DIR/source}"
+PROFILE="${BITSHIT_PROFILE:-release}"
+TARGET_BIN="bitshit"
+LEGACY_BIN="cluaiz"
 
-HUB_PATH="${HOME}/.cluaiz"
-REPO="cluaiz/cluaiz"
+log() { printf '\033[1;36m[bitshit]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[bitshit]\033[0m %s\n' "$*" >&2; }
+die() { printf '\033[1;31m[bitshit]\033[0m %s\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
 
-# --- UI Matrix (Industrial) ---
-BOLD='\033[1m'; CYAN='\033[0;36m'; GRAY='\033[0;90m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; NC='\033[0m'
+usage() {
+  cat <<'EOF'
+BitShit unified installer
 
-write_step() { echo -ne "  ${GRAY}[ ] $1...${NC}"; }
-complete_step() { echo -e "\r  ${GREEN}[✓]${NC} $1   "; }
-write_success() { echo -e "\n  ${GREEN}[OK] $1${NC}"; }
-write_error() { echo -e "\n  ${RED}[ERR] $1${NC}"; }
+Usage: ./install.sh [--backend auto|cpu|cuda|rocm|metal] [--yes] [--no-legacy-alias]
 
-# --- Header ---
-clear
-echo -e "\n  ${BOLD}cluaiz CORE INFRASTRUCTURE (V0.1.0)${NC}"
-echo -e "  ${GRAY}Industrial Deployment Sequence${NC}\n"
+Environment:
+  BITSHIT_INSTALL_DIR  Binary destination (default: ~/.local/bin)
+  BITSHIT_HOME         Runtime data directory (default: ~/.bitshit)
+  BITSHIT_SOURCE_DIR   Source checkout (default: ~/.bitshit/source)
+  BITSHIT_PROFILE      Cargo profile (default: release)
+EOF
+}
 
-# 1. Environment Provisioning
-write_step "Provisioning environment"
-mkdir -p "$HUB_PATH/bin" "$HUB_PATH/apps/cli" "$HUB_PATH/engine" "$HUB_PATH/interface-engines/kernels" "$HUB_PATH/interface-engines/drivers"
-complete_step "Provisioning environment"
+BACKEND=""
+ASSUME_YES=0
+LEGACY_ALIAS=1
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --backend) BACKEND="${2:-}"; shift 2 ;;
+    --yes|-y) ASSUME_YES=1; shift ;;
+    --no-legacy-alias) LEGACY_ALIAS=0; shift ;;
+    --help|-h) usage; exit 0 ;;
+    *) die "Unknown option: $1" ;;
+  esac
+done
 
-# 2. System Integration
-if [[ ":$PATH:" != *":$HUB_PATH/bin:"* ]]; then
-    SHELL_RC="$HOME/.bashrc"
-    [[ "$SHELL" == *"zsh"* ]] && SHELL_RC="$HOME/.zshrc"
-    if ! grep -q "cluaiz_ROOT" "$SHELL_RC" 2>/dev/null; then
-        echo -e "\n# cluaiz Environment\nexport cluaiz_ROOT=\"$HUB_PATH\"\nexport PATH=\"\$PATH:$HUB_PATH/bin\"" >> "$SHELL_RC"
-    fi
-    export cluaiz_ROOT="$HUB_PATH"
-    export PATH="$PATH:$HUB_PATH/bin"
+case "${BACKEND:-auto}" in auto|cpu|cuda|rocm|metal) ;; *) die "Invalid backend: $BACKEND" ;; esac
+
+need git
+need cargo
+need rustc
+need cmake
+need make
+
+has_nvidia() { command -v nvidia-smi >/dev/null 2>&1 || [[ -e /proc/driver/nvidia/version ]]; }
+has_rocm() { command -v rocminfo >/dev/null 2>&1 || command -v hipcc >/dev/null 2>&1; }
+has_metal() { [[ "$(uname -s)" == "Darwin" ]] && command -v xcrun >/dev/null 2>&1; }
+
+auto_backend() {
+  if has_nvidia; then echo cuda
+  elif has_rocm; then echo rocm
+  elif has_metal; then echo metal
+  else echo cpu
+  fi
+}
+
+if [[ -z "$BACKEND" ]]; then
+  DETECTED="$(auto_backend)"
+  if [[ $ASSUME_YES -eq 1 || ! -t 0 ]]; then
+    BACKEND="$DETECTED"
+  else
+    printf '\nDetected backend: %s\n' "$DETECTED"
+    printf 'Select backend:\n  1) Auto (%s)\n  2) CPU only\n  3) NVIDIA CUDA\n  4) AMD ROCm\n  5) Apple Metal\n' "$DETECTED"
+    read -r -p '> ' answer
+    case "$answer" in
+      1|"") BACKEND="$DETECTED" ;;
+      2) BACKEND=cpu ;;
+      3) BACKEND=cuda ;;
+      4) BACKEND=rocm ;;
+      5) BACKEND=metal ;;
+      *) die "Invalid selection" ;;
+    esac
+  fi
+elif [[ "$BACKEND" == auto ]]; then
+  BACKEND="$(auto_backend)"
 fi
 
-# 3. Sovereign Registry Sync
-write_step "Synchronizing Neural Registry"
-MASTER_REGISTRY_URL="https://raw.githubusercontent.com/cluaiz/cluaiz/main/package.json"
-MASTER_JSON=$(curl -sL "$MASTER_REGISTRY_URL")
-
-OS_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH_TYPE=$(uname -m)
-case "$OS_TYPE" in
-    linux) OS="linux"; EXT="so" ;;
-    darwin) OS="mac"; EXT="dylib" ;;
-    *) write_error "Unsupported OS"; exit 1 ;;
+case "$BACKEND" in
+  cuda) has_nvidia || die "CUDA selected but no NVIDIA driver/device was detected." ;;
+  rocm) has_rocm || die "ROCm selected but rocminfo/hipcc was not detected." ;;
+  metal) has_metal || die "Metal selected but this is not a configured macOS/Xcode system." ;;
 esac
-case "$ARCH_TYPE" in
-    x86_64) ARCH="x64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) write_error "Unsupported Arch"; exit 1 ;;
+
+mkdir -p "$DATA_DIR" "$INSTALL_DIR"
+if [[ -d "$SOURCE_DIR/.git" ]]; then
+  log "Updating source checkout"
+  git -C "$SOURCE_DIR" fetch --all --prune
+  git -C "$SOURCE_DIR" reset --hard origin/main
+else
+  rm -rf "$SOURCE_DIR"
+  log "Cloning BitShit"
+  git clone --recurse-submodules "$REPO" "$SOURCE_DIR"
+fi
+
+git -C "$SOURCE_DIR" submodule update --init --recursive
+
+export BITSHIT_HOME="$DATA_DIR"
+export CLUAIZ_HOME="$DATA_DIR" # temporary internal compatibility during crate migration
+unset GGML_CUDA GGML_HIPBLAS GGML_METAL
+case "$BACKEND" in
+  cpu) export GGML_CUDA=OFF GGML_HIPBLAS=OFF GGML_METAL=OFF ;;
+  cuda) export GGML_CUDA=ON ;;
+  rocm) export GGML_HIPBLAS=ON ;;
+  metal) export GGML_METAL=ON ;;
 esac
-PLATFORM="$OS-$ARCH"
-complete_step "Synchronizing Neural Registry"
 
-# --- CLI Deployment (Driven by package.json) ---
-CLI_MANIFEST_URL=$(echo "$MASTER_JSON" | grep -oE '"manifest_url": "[^"]+"' | sed -n '1p' | cut -d'"' -f4)
-CLI_MANIFEST=$(curl -sL "$CLI_MANIFEST_URL")
-CLI_URL=$(echo "$CLI_MANIFEST" | grep -oE '"'"$PLATFORM"'" : "[^"]+"' | cut -d'"' -f4)
+log "Building backend=$BACKEND profile=$PROFILE"
+(
+  cd "$SOURCE_DIR"
+  cargo build --locked --profile "$PROFILE" -p cmd --bin cluaiz
+)
 
-if [ -n "$CLI_URL" ]; then
-    write_step "Retrieving CLI ($PLATFORM)"
-    curl -sL "$CLI_URL" -o "$HUB_PATH/apps/cli/cluaiz"
-    chmod +x "$HUB_PATH/apps/cli/cluaiz"
-    ln -sf "$HUB_PATH/apps/cli/cluaiz" "$HUB_PATH/bin/cluaiz"
-    complete_step "Retrieving CLI ($PLATFORM)"
+BUILT="$SOURCE_DIR/target/$PROFILE/$LEGACY_BIN"
+[[ -x "$BUILT" ]] || die "Build completed without producing $BUILT"
+install -m 0755 "$BUILT" "$INSTALL_DIR/$TARGET_BIN"
+
+if [[ $LEGACY_ALIAS -eq 1 ]]; then
+  ln -sfn "$TARGET_BIN" "$INSTALL_DIR/$LEGACY_BIN"
 fi
 
-# --- Engine Deployment (Driven by package.json) ---
-ENGINE_MANIFEST_URL=$(echo "$MASTER_JSON" | grep -oE '"manifest_url": "[^"]+"' | sed -n '2p' | cut -d'"' -f4)
-ENGINE_MANIFEST=$(curl -sL "$ENGINE_MANIFEST_URL")
-ENGINE_URL=$(echo "$ENGINE_MANIFEST" | grep -oE '"'"$PLATFORM"'" : "[^"]+"' | cut -d'"' -f4)
+cat > "$DATA_DIR/install.json" <<EOF
+{
+  "product": "bitshit",
+  "backend": "$BACKEND",
+  "profile": "$PROFILE",
+  "binary": "$INSTALL_DIR/$TARGET_BIN",
+  "source": "$SOURCE_DIR"
+}
+EOF
 
-write_step "Retrieving Core Engine"
-curl -sL "$ENGINE_URL" -o "$HUB_PATH/engine/cluaiz-engine.$EXT"
-complete_step "Retrieving Core Engine"
-
-# --- Kernel Deployment (Driven by package.json) ---
-KERNEL_MANIFEST_URL=$(echo "$MASTER_JSON" | grep -oE '"manifest_url": "[^"]+"' | sed -n '3p' | cut -d'"' -f4)
-KERNEL_MANIFEST=$(curl -sL "$KERNEL_MANIFEST_URL")
-
-if [[ "$OS" == "mac" ]]; then
-    TARGET_PLATFORM="$PLATFORM"
-else
-    if [[ "$ARCH" == "arm64" ]]; then
-        TARGET_PLATFORM="linux-arm64"
-    else
-        HAS_AVX512=$(grep -o "avx512f" /proc/cpuinfo | head -1 || echo "")
-        TARGET_PLATFORM=$([ -n "$HAS_AVX512" ] && echo "linux-x64-avx512" || echo "linux-x64-avx2")
-    fi
+log "Installed $INSTALL_DIR/$TARGET_BIN"
+log "Runtime data: $DATA_DIR"
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+  warn "$INSTALL_DIR is not in PATH. Add: export PATH=\"$INSTALL_DIR:\$PATH\""
 fi
-
-KERNEL_URL=$(echo "$KERNEL_MANIFEST" | grep -oE '"'"$TARGET_PLATFORM"'" : "[^"]+"' | cut -d'"' -f4)
-
-if [ -n "$KERNEL_URL" ]; then
-    write_step "Retrieving Core Kernel ($TARGET_PLATFORM)"
-    curl -sL "$KERNEL_URL" -o "$HUB_PATH/interface-engines/kernels/cluaiz-llama.$EXT"
-    complete_step "Retrieving Core Kernel ($TARGET_PLATFORM)"
-fi
-
-write_success "Deployment successful."
-
-# 🧠 cluaizdb FFI Brain Setup
-echo ""
-echo -e "  ${YELLOW}>_ Optional: Enable the cluaizdb Memory Brain? (y/n)${NC}"
-read -p "    Choice: " brainChoice
-if [[ "$brainChoice" =~ ^[Yy]$ ]]; then
-    export cluaizdb_FFI=1
-    echo -e "    ${GREEN}[ENABLED]${NC} cluaizdb FFI Memory Brain activated."
-else
-    export cluaizdb_FFI=0
-    echo -e "    ${GRAY}[DISABLED]${NC} Using legacy file-based memory."
-fi
-
-# 🧬 Pre-Flight Calibration
-echo -e "\n  ${CYAN}>_ Synchronizing Hardware DNA...${NC}"
-"$HUB_PATH/bin/cluaiz" --calibrate
-
-echo -e "\n  ${GRAY}>_ Launching CLI...${NC}"
-
-# Launch CLI
-"$HUB_PATH/bin/cluaiz"
+"$INSTALL_DIR/$TARGET_BIN" --version || true
