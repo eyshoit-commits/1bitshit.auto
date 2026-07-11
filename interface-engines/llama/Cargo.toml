@@ -28,8 +28,8 @@ bindgen = "0.69"
 cmake = "0.1"
 
 [features]
-# ── Silicon Driver Switches ──
-default = ["cuda"]
+# Backends are selected explicitly by the platform installer.
+default = []
 
 # High-Performance GPUs
 cuda = []
@@ -37,7 +37,7 @@ metal = []
 vulkan = []
 rocm = []
 
-# NPU & Specialized Hardware (Hyper-Silicon)
+# NPU & Specialized Hardware
 openvino = []
 qnn = []
 sycl = []
