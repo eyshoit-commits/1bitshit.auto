@@ -70,6 +70,25 @@ GNU-style arguments are accepted by `install.ps1` as well:
 .\install.ps1 --backend cpu --yes --no-launch
 ```
 
+## Updates
+
+The updater refreshes the repository to `origin/main` and then invokes the same platform installer contract. It does not maintain a second, slightly haunted installation path.
+
+### Linux updates
+
+The previous backend is read from `~/.bitshit/install.json` when no backend is supplied. If no prior state exists, automatic hardware detection is used.
+
+```bash
+./update.sh
+./update.sh cpu
+./update.sh --backend cuda
+./update.sh --backend rocm --no-launch
+./update.sh --no-launch
+./update.sh --no-migrate --no-legacy-alias
+```
+
+Supported Linux updater backends are `auto`, `cpu`, `cuda` and `rocm`. Metal is intentionally not accepted by the Linux installer.
+
 ### Windows updates
 
 Use the CMD bootstrap for updates. It refreshes `update.ps1` from GitHub before PowerShell parses its parameters, preventing stale installer versions from failing before they can update themselves.
@@ -78,13 +97,26 @@ Use the CMD bootstrap for updates. It refreshes `update.ps1` from GitHub before 
 update.cmd auto
 update.cmd cpu
 update.cmd cuda
+update.cmd --backend cuda --no-launch
+update.cmd --no-migrate --no-legacy-alias
+```
+
+PowerShell can be called directly with positional, PowerShell-style or GNU-style arguments:
+
+```powershell
+.\update.ps1 cpu
+.\update.ps1 -Backend cuda -NoLaunch
+.\update.ps1 --backend cuda --no-launch
 ```
 
 From Git Bash:
 
 ```bash
 cmd.exe /c update.cmd cuda
+./update.sh --backend cuda --no-launch
 ```
+
+The update entrypoints preserve `--no-launch`, `--no-migrate` and `--no-legacy-alias` through every forwarding layer. Updates remain non-interactive and pass `-Yes` to the underlying installer.
 
 ## Installer behavior
 
@@ -149,10 +181,12 @@ Disable automatic migration with:
 
 ```bash
 ./install.sh --no-migrate
+./update.sh --no-migrate
 ```
 
 ```powershell
 .\install.ps1 -NoMigrate
+.\update.ps1 -NoMigrate
 ```
 
 The detailed migration contract is documented in [docs/PATH_MIGRATION.md](docs/PATH_MIGRATION.md).
