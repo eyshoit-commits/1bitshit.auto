@@ -7,6 +7,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 if ($env:OS -ne 'Windows_NT') { throw '[bitshit] scripts/app-windows.ps1 supports Windows only.' }
 
 $Repo = 'https://github.com/eyshoit-commits/1bitshit.auto.git'
@@ -31,6 +34,7 @@ $env:Path = "$UcrtBin;$MsysRoot\usr\bin;$MachinePath;$UserPath"
 Need git
 Need cargo
 Need rustc
+Need python.exe
 Need cmake.exe
 Need ninja.exe
 Need gcc.exe
@@ -76,6 +80,13 @@ $env:GGML_HIPBLAS = 'OFF'
 $env:GGML_METAL = 'OFF'
 Remove-Item Env:CARGO_FEATURE_CUDA -ErrorAction SilentlyContinue
 if ($Backend -eq 'cuda') { $env:CARGO_FEATURE_CUDA = '1' }
+
+Step 'Applying public runtime migration'
+Push-Location $SourceDir
+try {
+    & python.exe scripts/rebrand-main-cli.py
+    if ($LASTEXITCODE -ne 0) { Fail "Runtime migration failed with exit code $LASTEXITCODE." }
+} finally { Pop-Location }
 
 Step "Building backend=$Backend profile=$Profile target=$RustTarget"
 Push-Location $SourceDir
