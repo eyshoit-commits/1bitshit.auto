@@ -1,47 +1,80 @@
 param(
-    [ValidateSet('cuda','cpu','auto')]
-    [string]$Backend = 'cuda',
-    [switch]$NoMigrate,
-    [switch]$NoLegacyAlias
+    [Parameter(Position = 0)]
+    [string]$Backend = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$BitShitHome = if ($env:BITSHIT_HOME) { $env:BITSHIT_HOME } else { Join-Path $HOME '.bitshit' }
+$InstallState = Join-Path $BitShitHome 'install.json'
 
-function Write-Step([string]$Message) {
-    Write-Host "[bitshit-update] $Message" -ForegroundColor Cyan
+function Say([string]$Message) {
+    Write-Host $Message
 }
 
 function Fail([string]$Message) {
-    throw "[bitshit-update] $Message"
+    throw "FEHLER: $Message"
 }
 
-if (-not (Test-Path (Join-Path $RepoRoot '.git'))) {
-    Fail 'Dieses Skript muss direkt aus dem geklonten 1bitshit.auto-Repository gestartet werden.'
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Fail 'git wurde nicht gefunden.'
 }
 
-Write-Step 'BitShit Windows Update startet.'
-Write-Step 'Hole den aktuellen Stand von GitHub.'
+Set-Location $RepoRoot
 
-git -C $RepoRoot fetch origin --prune
+Say 'BitShit Update startet.'
+Say 'Hole den aktuellen Stand von GitHub.'
+
+git fetch origin --prune
 if ($LASTEXITCODE -ne 0) { Fail 'Git fetch ist fehlgeschlagen.' }
 
-git -C $RepoRoot checkout -q main
-if ($LASTEXITCODE -ne 0) { Fail 'Wechsel auf main ist fehlgeschlagen.' }
+$CurrentBranch = (git branch --show-current).Trim()
+if ([string]::IsNullOrWhiteSpace($CurrentBranch)) {
+    $CurrentBranch = 'main'
+    git switch main
+    if ($LASTEXITCODE -ne 0) { Fail 'Wechsel auf main ist fehlgeschlagen.' }
+}
 
-git -C $RepoRoot reset --hard origin/main
+if ($CurrentBranch -ne 'main') {
+    Say "Wechsle von Branch $CurrentBranch auf main."
+    git switch main
+    if ($LASTEXITCODE -ne 0) { Fail 'Wechsel auf main ist fehlgeschlagen.' }
+}
+
+git reset --hard origin/main
 if ($LASTEXITCODE -ne 0) { Fail 'Aktualisierung auf origin/main ist fehlgeschlagen.' }
 
-Write-Step "Verwende Backend: $Backend"
+if ([string]::IsNullOrWhiteSpace($Backend) -and (Test-Path $InstallState)) {
+    try {
+        $SavedBackend = (Get-Content -Raw $InstallState | ConvertFrom-Json).backend
+        if ($SavedBackend -in @('auto','cpu','cuda')) {
+            $Backend = $SavedBackend
+        }
+    } catch {
+        $Backend = ''
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($Backend)) {
+    $Backend = 'cpu'
+    Say 'Kein frueheres Backend gefunden. Verwende CPU.'
+} else {
+    Say "Verwende Backend: $Backend"
+}
+
+if ($Backend -notin @('auto','cpu','cuda')) {
+    Fail "Ungueltiges Backend: $Backend. Erlaubt sind auto, cpu oder cuda."
+}
+
 $Installer = Join-Path $RepoRoot 'install.ps1'
-if (-not (Test-Path $Installer)) { Fail 'install.ps1 wurde nicht gefunden.' }
+if (-not (Test-Path $Installer)) {
+    Fail 'install.ps1 fehlt im Repository.'
+}
 
-$Arguments = @('-Backend', $Backend, '-Yes')
-if ($NoMigrate) { $Arguments += '-NoMigrate' }
-if ($NoLegacyAlias) { $Arguments += '-NoLegacyAlias' }
+Say 'Starte Aktualisierung und Neuinstallation.'
+& $Installer -Backend $Backend -Yes
+if ($LASTEXITCODE -ne 0) {
+    Fail "Installation ist mit Exitcode $LASTEXITCODE fehlgeschlagen."
+}
 
-Write-Step 'Starte Aktualisierung und Neuinstallation.'
-& $Installer @Arguments
-if ($LASTEXITCODE -ne 0) { Fail "Installation ist mit Exitcode $LASTEXITCODE fehlgeschlagen." }
-
-Write-Step 'Windows Update und Installation abgeschlossen.'
+Say 'BitShit Update abgeschlossen.'
