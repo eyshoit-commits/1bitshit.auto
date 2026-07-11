@@ -63,6 +63,22 @@ Non-interactive examples:
 .\install.ps1 -Backend Cuda -Yes
 ```
 
+### Windows updates
+
+Use the CMD bootstrap for updates. It refreshes `update.ps1` from GitHub before PowerShell parses its parameters, preventing stale installer versions from failing before they can update themselves.
+
+```cmd
+update.cmd auto
+update.cmd cpu
+update.cmd cuda
+```
+
+From Git Bash:
+
+```bash
+cmd.exe /c update.cmd cuda
+```
+
 ## Installer behavior
 
 The installers:
