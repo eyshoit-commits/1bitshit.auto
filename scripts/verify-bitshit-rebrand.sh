@@ -47,7 +47,7 @@ check_file_present 'eyshoit-commits/bitshit.cpu' install.sh 'POSIX installer use
 check_file_present 'eyshoit-commits/bitshit.cpu' install.ps1 'PowerShell installer uses the BitShit repository'
 check_file_present 'auto\|cpu\|cuda\|rocm\|metal' install.sh 'POSIX installer exposes all supported backends'
 check_file_present "ValidateSet\('auto','cpu','cuda'\)" install.ps1 'PowerShell installer exposes backend selection'
-check_file_present 'cargo build --locked.*--bin bitshit' install.sh 'POSIX installer builds the public BitShit binary'
+check_file_present 'cargo build --locked.*--bin.*TARGET_BIN' install.sh 'POSIX installer builds the public BitShit binary'
 check_file_present 'cargo build --locked.*--bin bitshit' install.ps1 'PowerShell installer builds the public BitShit binary'
 
 check_file_present 'migrate_legacy_data' install.sh 'POSIX installer includes legacy data migration'
@@ -56,8 +56,19 @@ check_file_present '\.migrated-from-cluaiz' install.sh 'POSIX migration is idemp
 check_file_present '\.migrated-from-cluaiz' install.ps1 'PowerShell migration is idempotent'
 check_file_present 'original remains untouched' install.sh 'POSIX migration preserves legacy data'
 check_file_present 'original remains untouched' install.ps1 'PowerShell migration preserves legacy data'
+check_file_present 'cp -a.*entry.*target' install.sh 'POSIX migration preserves symbolic links'
 check_file_absent 'raw\.githubusercontent\.com/cluaiz|github\.com/cluaiz/cluaiz' install.sh 'POSIX installer has no legacy remote registry'
 check_file_absent 'raw\.githubusercontent\.com/cluaiz|github\.com/cluaiz/cluaiz' install.ps1 'PowerShell installer has no legacy remote registry'
+
+check_file_present 'command -v nvcc' install.sh 'POSIX CUDA detection requires the toolkit'
+check_file_present 'command -v hipcc' install.sh 'POSIX ROCm detection requires hipcc'
+check_file_present 'xcrun --find clang' install.sh 'POSIX Metal detection requires Xcode tools'
+check_file_present 'Missing C\+\+ compiler' install.sh 'POSIX installer validates a C++ compiler'
+check_file_present 'Get-Command nvcc' install.ps1 'Windows CUDA detection requires the toolkit'
+check_file_present 'Get-Command cl\.exe' install.ps1 'Windows installer validates MSVC'
+check_file_present 'submodule sync --recursive' install.sh 'POSIX installer synchronizes submodule URLs'
+check_file_present 'submodule sync --recursive' install.ps1 'Windows installer synchronizes submodule URLs'
+check_file_present 'LASTEXITCODE' install.ps1 'Windows installer checks native command failures'
 
 if [[ $fail -ne 0 ]]; then
   printf '\nBitShit rebrand verification failed.\n' >&2
